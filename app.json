@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Glow",
+    "slug": "glow-skincare",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFF0F5"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.glow.skincare",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Glow needs camera access to analyze your skin and scan products",
+        "NSPhotoLibraryUsageDescription": "Glow needs photo library access for skin analysis"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFF0F5"
+      },
+      "package": "com.glow.skincare",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Glow needs camera access to analyze your skin and scan products"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Glow to analyze your skin photos"
+        }
+      ]
+    ],
+    "scheme": "glow"
+  }
+}
