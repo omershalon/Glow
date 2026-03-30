@@ -35,12 +35,32 @@ const SKIN_TYPE_COLORS: Record<SkinType, string> = {
   normal: '#4CAF87',
 };
 
-const ACNE_TYPE_DESCRIPTIONS: Record<AcneType, string> = {
-  hormonal: 'Often appears on chin and jaw, linked to hormone fluctuations',
-  cystic: 'Deep, painful nodules that develop under the skin',
-  comedonal: 'Blackheads and whiteheads caused by clogged pores',
-  fungal: 'Caused by yeast overgrowth, often uniform in appearance',
-  inflammatory: 'Red, swollen pustules and papules',
+const ACNE_INFO: Record<AcneType, { emoji: string; plain: string; solutions: string[] }> = {
+  hormonal: {
+    emoji: '🌙',
+    plain: 'Your breakouts are driven by hormone shifts — they tend to cluster around your chin and jawline and flare around your cycle. The good news: they respond really well to the right routine.',
+    solutions: ['Cut back on dairy and high-sugar foods', 'Add spearmint tea daily', 'Use a gentle salicylic acid cleanser', 'Try zinc supplements', 'Manage stress — cortisol makes this worse'],
+  },
+  cystic: {
+    emoji: '🔴',
+    plain: 'Cystic acne forms deep under the skin and can be painful. It\'s one of the more stubborn types, but with a consistent routine targeting inflammation you can see real improvement.',
+    solutions: ['Never squeeze — it deepens scarring', 'Use benzoyl peroxide spot treatment', 'Reduce inflammatory foods (fried, processed)', 'Ice inflamed spots to reduce swelling', 'Consider a dermatologist for persistent nodules'],
+  },
+  comedonal: {
+    emoji: '⚫',
+    plain: 'You have clogged pores — blackheads and whiteheads forming when oil and dead skin cells get trapped. This type clears up well with the right exfoliation routine.',
+    solutions: ['Exfoliate with salicylic acid 2–3x per week', 'Use a non-comedogenic moisturiser', 'Add a retinol to your evening routine', 'Double-cleanse if you wear sunscreen or makeup', 'Use pore strips sparingly for blackheads'],
+  },
+  fungal: {
+    emoji: '🍄',
+    plain: 'Fungal acne is caused by yeast, not bacteria — which means most acne products won\'t help. The bumps tend to look uniform and itchy. The fix is antifungal, not antibacterial.',
+    solutions: ['Switch to an antifungal cleanser (zinc pyrithione)', 'Avoid heavy oils on your face', 'Change pillowcases every 2 days', 'Let skin breathe — avoid occlusive products', 'Keep skin dry, especially after exercise'],
+  },
+  inflammatory: {
+    emoji: '🔥',
+    plain: 'Your acne is in an active inflammatory state — red, raised, and reactive. Calming the inflammation is the first priority before anything else.',
+    solutions: ['Use a gentle, fragrance-free cleanser', 'Apply niacinamide serum to reduce redness', 'Cut out spicy foods and alcohol temporarily', 'Use ice wrapped in cloth on inflamed spots', 'Avoid touching your face during flare-ups'],
+  },
 };
 
 export default function ScanScreen() {
@@ -99,48 +119,12 @@ export default function ScanScreen() {
         encoding: 'base64' as any,
       });
 
-      // Detect image format
-      let mediaType: 'image/jpeg' | 'image/png' | 'image/webp' = 'image/jpeg';
-      if (base64.startsWith('iVBORw0KGgo')) mediaType = 'image/png';
-      else if (base64.startsWith('UklGR')) mediaType = 'image/webp';
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY!,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-opus-4-6',
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64 },
-              },
-              {
-                type: 'text',
-                text: `You are an expert dermatologist AI. Analyze this face photo and return ONLY valid JSON with this exact structure, no markdown:
-{"skin_type":"oily"|"dry"|"combination"|"sensitive"|"normal","acne_type":"hormonal"|"cystic"|"comedonal"|"fungal"|"inflammatory","severity":"mild"|"moderate"|"severe","analysis_notes":"2-3 sentence description of findings","confidence":0.0-1.0}`,
-              },
-            ],
-          }],
-        }),
+      const { data, error } = await supabase.functions.invoke('analyze-skin', {
+        body: { image_base64: base64 },
       });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('Claude API error:', errText);
-        throw new Error(errText);
-      }
-
-      const claudeData = await response.json();
-      const text = claudeData.content.find((b: any) => b.type === 'text')?.text ?? '';
-      const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const analysisResult: AnalysisResult = JSON.parse(cleaned);
+      if (error) throw error;
+      const analysisResult: AnalysisResult = data;
 
       setResult(analysisResult);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -375,26 +359,30 @@ export default function ScanScreen() {
                 </View>
               </View>
 
-              {/* Confidence */}
-              <View style={styles.confidenceRow}>
-                <Text style={styles.confidenceLabel}>AI Confidence: </Text>
-                <Text style={styles.confidenceValue}>{(result.confidence * 100).toFixed(0)}%</Text>
+              {/* Acne explanation card */}
+              <View style={styles.explanationCard}>
+                <Text style={styles.explanationEmoji}>
+                  {ACNE_INFO[result.acne_type].emoji}
+                </Text>
+                <View style={styles.explanationBody}>
+                  <Text style={styles.explanationTitle}>
+                    {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)} Acne
+                  </Text>
+                  <Text style={styles.explanationText}>
+                    {ACNE_INFO[result.acne_type].plain}
+                  </Text>
+                </View>
               </View>
 
-              {/* Acne type description */}
-              <View style={styles.acneDescription}>
-                <Text style={styles.acneDescriptionTitle}>
-                  About {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)} Acne
-                </Text>
-                <Text style={styles.acneDescriptionText}>
-                  {ACNE_TYPE_DESCRIPTIONS[result.acne_type]}
-                </Text>
-              </View>
-
-              {/* Analysis notes */}
-              <View style={styles.notesCard}>
-                <Text style={styles.notesTitle}>AI Analysis Notes</Text>
-                <Text style={styles.notesText}>{result.analysis_notes}</Text>
+              {/* Quick solutions */}
+              <View style={styles.solutionsCard}>
+                <Text style={styles.solutionsTitle}>Quick wins to start today</Text>
+                {ACNE_INFO[result.acne_type].solutions.map((s, i) => (
+                  <View key={i} style={styles.solutionRow}>
+                    <Text style={styles.solutionBullet}>·</Text>
+                    <Text style={styles.solutionText}>{s}</Text>
+                  </View>
+                ))}
               </View>
 
               {/* Action buttons */}
@@ -663,48 +651,58 @@ const styles = StyleSheet.create({
     ...Typography.labelMedium,
     fontWeight: '700',
   },
-  confidenceRow: {
+  explanationCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-  },
-  confidenceLabel: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  confidenceValue: {
-    ...Typography.bodySmall,
-    color: Colors.success,
-    fontWeight: '700',
-  },
-  acneDescription: {
     backgroundColor: Colors.subtle,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
+    gap: Spacing.md,
+    alignItems: 'flex-start',
   },
-  acneDescriptionTitle: {
+  explanationEmoji: {
+    fontSize: 36,
+    lineHeight: 44,
+  },
+  explanationBody: {
+    flex: 1,
+    gap: 6,
+  },
+  explanationTitle: {
     ...Typography.labelLarge,
     color: Colors.primaryDark,
-    marginBottom: Spacing.xs,
   },
-  acneDescriptionText: {
+  explanationText: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
     lineHeight: 20,
   },
-  notesCard: {
+  solutionsCard: {
     backgroundColor: Colors.white,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
+    gap: Spacing.sm,
     ...Shadows.sm,
   },
-  notesTitle: {
+  solutionsTitle: {
     ...Typography.labelLarge,
     color: Colors.text,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
-  notesText: {
+  solutionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'flex-start',
+  },
+  solutionBullet: {
+    fontSize: 18,
+    color: Colors.primary,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  solutionText: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
+    flex: 1,
     lineHeight: 22,
   },
   generatePlanButton: {

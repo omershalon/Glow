@@ -4,7 +4,7 @@ export type Severity = 'mild' | 'moderate' | 'severe';
 export type SubscriptionTier = 'free' | 'premium';
 export type Verdict = 'suitable' | 'unsuitable' | 'caution';
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
@@ -35,6 +35,7 @@ export interface Database {
           product_scans_used?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       skin_profiles: {
         Row: {
@@ -67,6 +68,7 @@ export interface Database {
           photo_url?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       personalized_plans: {
         Row: {
@@ -77,6 +79,7 @@ export interface Database {
           diet_pillar: DietPillar;
           herbal_pillar: HerbalPillar;
           lifestyle_pillar: LifestylePillar;
+          ranked_items: RankedItem[];
           is_active: boolean;
           created_at: string;
         };
@@ -88,6 +91,7 @@ export interface Database {
           diet_pillar: DietPillar;
           herbal_pillar: HerbalPillar;
           lifestyle_pillar: LifestylePillar;
+          ranked_items?: RankedItem[];
           is_active?: boolean;
           created_at?: string;
         };
@@ -99,9 +103,29 @@ export interface Database {
           diet_pillar?: DietPillar;
           herbal_pillar?: HerbalPillar;
           lifestyle_pillar?: LifestylePillar;
+          ranked_items?: RankedItem[];
           is_active?: boolean;
           created_at?: string;
         };
+        Relationships: [];
+      };
+      routine_items: {
+        Row: RoutineItem;
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_id: string;
+          pillar: string;
+          title: string;
+          rationale: string;
+          impact_rank: number;
+          is_active?: boolean;
+          added_at?: string;
+        };
+        Update: {
+          is_active?: boolean;
+        };
+        Relationships: [];
       };
       progress_photos: {
         Row: {
@@ -140,6 +164,7 @@ export interface Database {
           annotations?: ZoneAnnotations;
           created_at?: string;
         };
+        Relationships: [];
       };
       product_scans: {
         Row: {
@@ -172,6 +197,7 @@ export interface Database {
           ingredients?: string[];
           created_at?: string;
         };
+        Relationships: [];
       };
       onboarding_data: {
         Row: {
@@ -204,10 +230,15 @@ export interface Database {
           skin_concerns?: string[];
           created_at?: string;
         };
+        Relationships: [];
       };
     };
+    Views: { [_ in never]: never };
+    Functions: { [_ in never]: never };
+    Enums: { [_ in never]: never };
+    CompositeTypes: { [_ in never]: never };
   };
-}
+};
 
 // Pillar types
 export interface RoutineStep {
@@ -268,6 +299,25 @@ export interface LifestylePillar {
   stress_management: string[];
   exercise_guidance: string;
   things_to_avoid: string[];
+}
+
+export interface RankedItem {
+  pillar: 'herbal' | 'diet' | 'product' | 'lifestyle';
+  title: string;
+  rationale: string;
+  impact_rank: number;
+}
+
+export interface RoutineItem {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  pillar: string;
+  title: string;
+  rationale: string;
+  impact_rank: number;
+  is_active: boolean;
+  added_at: string;
 }
 
 export interface ZoneAnnotations {

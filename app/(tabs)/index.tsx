@@ -57,6 +57,7 @@ export default function HomeScreen() {
   const [skinProfile, setSkinProfile] = useState<SkinProfile | null>(null);
   const [plan, setPlan] = useState<PersonalizedPlan | null>(null);
   const [lastProgress, setLastProgress] = useState<ProgressPhoto | null>(null);
+  const [routineCount, setRoutineCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -89,7 +90,15 @@ export default function HomeScreen() {
 
     if (profileRes.data) setProfile(profileRes.data);
     if (skinRes.data) setSkinProfile(skinRes.data);
-    if (planRes.data) setPlan(planRes.data);
+    if (planRes.data) {
+      setPlan(planRes.data);
+      const { count } = await supabase
+        .from('routine_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('plan_id', planRes.data.id)
+        .eq('is_active', true);
+      setRoutineCount(count ?? 0);
+    }
     if (progressRes.data) setLastProgress(progressRes.data);
   }, []);
 
@@ -102,6 +111,10 @@ export default function HomeScreen() {
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
+
+  const weekNumber = skinProfile
+    ? Math.ceil(differenceInDays(new Date(), new Date(skinProfile.created_at)) / 7) || 1
+    : null;
 
   const nextCheckIn = lastProgress
     ? addDays(new Date(lastProgress.created_at), 7)
@@ -147,8 +160,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
         <Text style={styles.headerSubtext}>
-          {skinProfile
-            ? 'Your personalized skin journey is underway'
+          {weekNumber
+            ? `Week ${weekNumber} of your journey`
             : 'Ready to start your skin journey?'}
         </Text>
       </LinearGradient>
@@ -261,6 +274,46 @@ export default function HomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
         ) : null}
+
+        {/* Quick action buttons */}
+        {skinProfile && (
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.quickButton}
+              onPress={() => router.push('/(tabs)/progress')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.quickButtonEmoji}>📷</Text>
+              <Text style={styles.quickButtonText}>Log Today's Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.quickButton, styles.quickButtonPrimary]}
+              onPress={() => router.push('/(tabs)/plan')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.quickButtonEmoji}>📋</Text>
+              <Text style={[styles.quickButtonText, styles.quickButtonTextPrimary]}>
+                View Full Plan
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Routine count */}
+        {plan && routineCount > 0 && (
+          <TouchableOpacity
+            style={styles.routineCountCard}
+            onPress={() => router.push('/(tabs)/plan')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.routineCountEmoji}>✅</Text>
+            <Text style={styles.routineCountText}>
+              You have <Text style={styles.routineCountNumber}>{routineCount}</Text>{' '}
+              {routineCount === 1 ? 'item' : 'items'} in your routine
+            </Text>
+            <Text style={styles.routineCountArrow}>→</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Progress check-in card */}
         {skinProfile && (
@@ -655,5 +708,62 @@ const styles = StyleSheet.create({
   upgradeButtonText: {
     ...Typography.labelLarge,
     color: Colors.white,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  quickButton: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    ...Shadows.sm,
+  },
+  quickButtonPrimary: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  quickButtonEmoji: {
+    fontSize: 24,
+  },
+  quickButtonText: {
+    ...Typography.labelSmall,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  quickButtonTextPrimary: {
+    color: Colors.white,
+  },
+  routineCountCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.successLight,
+  },
+  routineCountEmoji: {
+    fontSize: 20,
+  },
+  routineCountText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  routineCountNumber: {
+    fontWeight: '700',
+    color: Colors.success,
+  },
+  routineCountArrow: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
   },
 });

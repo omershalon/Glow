@@ -111,49 +111,11 @@ export default function ProgressScreen() {
         encoding: 'base64' as any,
       });
 
-      let mediaType: 'image/jpeg' | 'image/png' = 'image/jpeg';
-      if (base64.startsWith('iVBORw0KGgo')) mediaType = 'image/png';
-
       const weekNumber = photos.length > 0
         ? differenceInWeeks(new Date(), new Date(photos[photos.length - 1].created_at)) + photos[photos.length - 1].week_number
         : 1;
 
-      const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY!,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-              { type: 'text', text: `Week ${weekNumber} skin check-in. Return ONLY valid JSON, no markdown:\n{"severity_score":0.0,"analysis_notes":"2-3 encouraging sentences","zones":{"forehead":"","nose":"","left_cheek":"","right_cheek":"","chin":"","overall":""}}\nSeverity: 0=clear, 10=severe.` },
-            ],
-          }],
-        }),
-      });
-
-      let trackData = {
-        severity_score: 5.0,
-        analysis_notes: 'Progress photo logged successfully.',
-        zones: { forehead: '', nose: '', left_cheek: '', right_cheek: '', chin: '', overall: '' },
-      };
-
-      if (aiResponse.ok) {
-        const claudeData = await aiResponse.json();
-        const text = claudeData.content.find((b: any) => b.type === 'text')?.text ?? '';
-        try {
-          const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-          trackData = JSON.parse(cleaned);
-        } catch { /* use default */ }
-      }
-
-      // Upload to storage (best-effort)
+      // Upload to storage (best-effort) — do this first so the Edge Function URL is usable
       let photoUrl = uri;
       try {
         const fileName = `${user.id}/progress-${Date.now()}.jpg`;
@@ -166,17 +128,21 @@ export default function ProgressScreen() {
         }
       } catch { /* keep local URI */ }
 
+      const { data: trackData, error: fnError } = await supabase.functions.invoke('track-progress', {
+        body: { user_id: user.id, image_base64: base64, week_number: weekNumber },
+      });
+
+      if (fnError) throw fnError;
+
       const { error: insertError } = await supabase.from('progress_photos').insert({
         user_id: user.id,
         photo_url: photoUrl,
         week_number: weekNumber,
-        severity_score: trackData.severity_score,
-        improvement_percentage: photos.length > 0
-          ? ((photos[0].severity_score - trackData.severity_score) / photos[0].severity_score) * 100
-          : null,
-        analysis_notes: trackData.analysis_notes,
+        severity_score: trackData.severity_score ?? 5.0,
+        improvement_percentage: trackData.improvement_percentage ?? null,
+        analysis_notes: trackData.analysis_notes ?? '',
         notes: '',
-        annotations: trackData.zones,
+        annotations: trackData.zones ?? { forehead: '', nose: '', left_cheek: '', right_cheek: '', chin: '', overall: '' },
       });
 
       if (insertError) throw insertError;

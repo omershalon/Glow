@@ -1,6 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Anthropic from 'npm:@anthropic-ai/sdk@0.52.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,48 +7,33 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Mock product database - in production this would call Open Food Facts, EWG, etc.
-const MOCK_PRODUCTS: Record<string, { name: string; ingredients: string[] }> = {
+const KNOWN_PRODUCTS: Record<string, { name: string; ingredients: string[] }> = {
   '796030114134': {
     name: 'CeraVe Moisturizing Cream',
-    ingredients: ['Water', 'Glycerin', 'Cetearyl Alcohol', 'Caprylic/Capric Triglyceride', 'Behentrimonium Methosulfate', 'Ceramide NP', 'Ceramide AP', 'Ceramide EOP', 'Cholesterol', 'Phytosphingosine', 'Sodium Lauroyl Lactylate', 'Sodium Hyaluronate', 'Carbomer', 'Dimethicone'],
+    ingredients: ['Water', 'Glycerin', 'Cetearyl Alcohol', 'Caprylic/Capric Triglyceride', 'Ceramide NP', 'Ceramide AP', 'Ceramide EOP', 'Cholesterol', 'Sodium Hyaluronate', 'Dimethicone'],
   },
   '381370033244': {
     name: 'Neutrogena Oil-Free Acne Wash',
-    ingredients: ['Water', 'Salicylic Acid 2%', 'Glycerin', 'Cocamidopropyl Betaine', 'Sodium Methyl Cocoyl Taurate', 'Sodium Lauroyl Sarcosinate', 'Sodium Chloride', 'Aloe Barbadensis Leaf Juice', 'Glycol Distearate'],
+    ingredients: ['Water', 'Salicylic Acid 2%', 'Glycerin', 'Cocamidopropyl Betaine', 'Aloe Barbadensis Leaf Juice'],
   },
   '811701014161': {
     name: 'The Ordinary Niacinamide 10% + Zinc 1%',
-    ingredients: ['Aqua (Water)', 'Niacinamide', 'Pentylene Glycol', 'Zinc PCA', 'Dimethyl Isosorbide', 'Tamarindus Indica Seed Gum', 'Xanthan Gum', 'Isoceteth-20', 'Ethoxydiglycol', 'Phenoxyethanol', 'Chlorphenesin'],
+    ingredients: ['Aqua', 'Niacinamide', 'Pentylene Glycol', 'Zinc PCA', 'Tamarindus Indica Seed Gum', 'Phenoxyethanol'],
   },
   '3337872413682': {
     name: 'La Roche-Posay Effaclar Duo',
-    ingredients: ['Aqua/Water', 'Benzoyl Peroxide 5.5%', 'PPG-15 Stearyl Ether', 'Glycerin', 'Propylene Glycol', 'Zinc PCA', 'Niacinamide', 'Lipo Hydroxy Acid', 'Piroctone Olamine', 'Silica', 'Dimethicone'],
+    ingredients: ['Aqua', 'Benzoyl Peroxide 5.5%', 'Glycerin', 'Zinc PCA', 'Niacinamide', 'Lipo Hydroxy Acid'],
   },
 };
 
 function lookupProduct(barcode: string): { name: string; ingredients: string[] } {
-  // Check mock database
-  if (MOCK_PRODUCTS[barcode]) {
-    return MOCK_PRODUCTS[barcode];
-  }
-
-  // Generate a plausible product for any other barcode
+  if (KNOWN_PRODUCTS[barcode]) return KNOWN_PRODUCTS[barcode];
   return {
     name: `Skincare Product #${barcode.slice(-6)}`,
     ingredients: [
-      'Aqua (Water)',
-      'Glycerin',
-      'Niacinamide',
-      'Propylene Glycol',
-      'Sodium Hyaluronate',
-      'Phenoxyethanol',
-      'Parfum/Fragrance',
-      'Sodium Lauryl Sulfate',
-      'Methylparaben',
-      'Dimethicone',
-      'Cetearyl Alcohol',
-      'Butylene Glycol',
+      'Aqua (Water)', 'Glycerin', 'Niacinamide', 'Propylene Glycol',
+      'Sodium Hyaluronate', 'Phenoxyethanol', 'Parfum/Fragrance',
+      'Sodium Lauryl Sulfate', 'Methylparaben', 'Dimethicone',
     ],
   };
 }
@@ -60,11 +44,11 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'ANTHROPIC_API_KEY secret not set' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -81,18 +65,18 @@ serve(async (req) => {
       );
     }
 
-    // Get user's skin profile and onboarding
+    // Fetch skin profile and onboarding in parallel
     const [skinProfileRes, onboardingRes] = await Promise.all([
       supabaseClient
         .from('skin_profiles')
-        .select('*')
+        .select('skin_type, acne_type, severity')
         .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single(),
       supabaseClient
         .from('onboarding_data')
-        .select('*')
+        .select('known_allergies')
         .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -101,13 +85,7 @@ serve(async (req) => {
 
     const skinProfile = skinProfileRes.data;
     const onboarding = onboardingRes.data;
-
-    // Look up product
     const product = lookupProduct(barcode);
-
-    const anthropic = new Anthropic({
-      apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-    });
 
     const skinContext = skinProfile
       ? `User skin profile:
@@ -115,15 +93,22 @@ serve(async (req) => {
 - Acne Type: ${skinProfile.acne_type}
 - Severity: ${skinProfile.severity}
 ${onboarding?.known_allergies?.length ? `- Known Allergies: ${onboarding.known_allergies.join(', ')}` : ''}`
-      : 'No skin profile available - provide general analysis.';
+      : 'No skin profile available — provide general analysis.';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 1000,
-      messages: [
-        {
-          role: 'user',
-          content: `You are a dermatologist AI analyzing a skincare product's compatibility with a specific user's skin.
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1000,
+        messages: [
+          {
+            role: 'user',
+            content: `You are a dermatologist AI analyzing a skincare product's compatibility with a specific user's skin.
 
 ${skinContext}
 
@@ -131,34 +116,37 @@ Product to analyze:
 Name: ${product.name}
 Ingredients: ${product.ingredients.join(', ')}
 
-Analyze the ingredients and determine if this product is suitable for this user's specific skin type and acne condition.
-
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON, no markdown:
 {
   "product_name": "${product.name}",
-  "verdict": "suitable" | "unsuitable" | "caution",
-  "reason": "2-3 sentence explanation tailored to their specific skin profile",
-  "flagged_ingredients": ["ingredient1", "ingredient2"],
-  "beneficial_ingredients": ["ingredient1", "ingredient2"]
+  "verdict": "suitable",
+  "reason": "2-3 sentence explanation tailored to their skin profile.",
+  "flagged_ingredients": [],
+  "beneficial_ingredients": []
 }
 
-Verdict definitions:
-- suitable: Most ingredients are beneficial or neutral for their skin type; minimal concerning ingredients
-- caution: Mix of beneficial and problematic ingredients; can use with monitoring
-- unsuitable: Contains ingredients likely to worsen their specific acne type or skin concerns
+Verdict options:
+- "suitable": ingredients are mostly beneficial or neutral for their skin type
+- "caution": mixed — can use with monitoring
+- "unsuitable": contains ingredients likely to worsen their specific condition
 
 Return ONLY valid JSON, no markdown.`,
-        },
-      ],
+          },
+        ],
+      }),
     });
 
-    let analysisText = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        analysisText = block.text;
-        break;
-      }
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      console.error('Anthropic API error:', errText);
+      return new Response(
+        JSON.stringify({ error: 'Anthropic API error', details: errText }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+
+    const claudeData = await anthropicRes.json();
+    const analysisText = claudeData.content?.find((b: { type: string }) => b.type === 'text')?.text ?? '';
 
     let analysis: {
       product_name: string;
@@ -202,7 +190,7 @@ Return ONLY valid JSON, no markdown.`,
     }
 
     return new Response(
-      JSON.stringify(savedScan || {
+      JSON.stringify(savedScan ?? {
         user_id,
         barcode,
         product_name: analysis.product_name,
@@ -213,10 +201,7 @@ Return ONLY valid JSON, no markdown.`,
           : analysis.flagged_ingredients,
         created_at: new Date().toISOString(),
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('scan-product error:', error);

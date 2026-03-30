@@ -38,13 +38,13 @@ double_confirm_changes = true
 enable_confirmations = false
 
 [functions.analyze-skin]
-verify_jwt = true
+verify_jwt = false
 
 [functions.generate-plan]
-verify_jwt = true
+verify_jwt = false
 
 [functions.scan-product]
-verify_jwt = true
+verify_jwt = false
 
 [functions.track-progress]
-verify_jwt = true
+verify_jwt = false
