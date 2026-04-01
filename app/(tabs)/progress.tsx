@@ -15,7 +15,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
@@ -28,18 +27,19 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay,
 type ProgressPhoto = {
   id: string;
   user_id: string;
-  photo_url: string;
+  image_url: string;
   week_number: number;
   severity_score: number;
   improvement_percentage: number | null;
   analysis_notes: string;
   notes: string;
-  annotations: Record<string, string>;
+  annotations?: Record<string, string>;
   created_at: string;
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const DAY_CELL = (SCREEN_WIDTH - Spacing.xxl * 2 - 2) / 7;
+const CALENDAR_PADDING = Spacing.lg;
+const DAY_CELL = (SCREEN_WIDTH - Spacing.xxl * 2 - CALENDAR_PADDING * 2) / 7;
 
 const ZONE_LABELS: Record<string, string> = {
   forehead: 'Forehead',
@@ -115,7 +115,7 @@ export default function ProgressScreen() {
         ? differenceInWeeks(new Date(), new Date(photos[photos.length - 1].created_at)) + photos[photos.length - 1].week_number
         : 1;
 
-      // Upload to storage (best-effort) — do this first so the Edge Function URL is usable
+      // Upload to storage (best-effort)
       let photoUrl = uri;
       try {
         const fileName = `${user.id}/progress-${Date.now()}.jpg`;
@@ -136,14 +136,14 @@ export default function ProgressScreen() {
 
       const { error: insertError } = await supabase.from('progress_photos').insert({
         user_id: user.id,
-        photo_url: photoUrl,
+        image_url: photoUrl,
         week_number: weekNumber,
-        severity_score: trackData.severity_score ?? 5.0,
+        severity_score: Math.round(trackData.severity_score ?? 5),
         improvement_percentage: trackData.improvement_percentage ?? null,
         analysis_notes: trackData.analysis_notes ?? '',
         notes: '',
-        annotations: trackData.zones ?? { forehead: '', nose: '', left_cheek: '', right_cheek: '', chin: '', overall: '' },
-      });
+        annotations: trackData.zones ?? {},
+      } as any);
 
       if (insertError) throw insertError;
 
@@ -185,7 +185,7 @@ export default function ProgressScreen() {
   const firstWeekday = getDay(startOfMonth(calendarMonth));
   const paddingCells = Array(firstWeekday).fill(null);
 
-  // Group photos by date – photos are already sorted newest first, so first in each group is latest
+  // Group photos by date
   const photosByDate = photos.reduce<Record<string, ProgressPhoto[]>>((acc, p) => {
     const key = format(new Date(p.created_at), 'yyyy-MM-dd');
     if (!acc[key]) acc[key] = [];
@@ -200,15 +200,18 @@ export default function ProgressScreen() {
   const latestPhoto = photos[0];
   const firstPhoto = photos[photos.length - 1];
 
+  // Determine current week for comparison header
+  const currentWeek = latestPhoto?.week_number ?? 1;
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Fixed header */}
-      <LinearGradient colors={['#FFF0F5', '#FFE0ED']} style={styles.header}>
+      {/* Header */}
+      <View style={styles.header}>
         <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerTitle}>Progress Tracker</Text>
-            <Text style={styles.headerSubtitle}>{photos.length} check-in{photos.length !== 1 ? 's' : ''} logged</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Progress log</Text>
+            <Text style={styles.headerSubtitle}>Monitor your skin journey week by week</Text>
           </View>
           <TouchableOpacity
             style={[styles.logButton, uploading && styles.buttonDisabled]}
@@ -216,14 +219,12 @@ export default function ProgressScreen() {
             disabled={uploading}
             activeOpacity={0.85}
           >
-            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.logButtonGradient}>
-              {uploading
-                ? <ActivityIndicator size="small" color={Colors.white} />
-                : <Text style={styles.logButtonText}>+ Log</Text>}
-            </LinearGradient>
+            {uploading
+              ? <ActivityIndicator size="small" color={Colors.white} />
+              : <Text style={styles.logButtonText}>+ Log</Text>}
           </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
 
       {loading ? (
         <View style={styles.centered}>
@@ -234,10 +235,12 @@ export default function ProgressScreen() {
           <Text style={styles.emptyEmoji}>📸</Text>
           <Text style={styles.emptyTitle}>Start Your Progress Journey</Text>
           <Text style={styles.emptySubtitle}>Log your first photo to begin tracking your skin transformation</Text>
-          <TouchableOpacity style={[styles.startButton, uploading && styles.buttonDisabled]} onPress={logProgressPhoto} disabled={uploading}>
-            <LinearGradient colors={[Colors.secondary, Colors.primary]} style={styles.startButtonGradient}>
-              <Text style={styles.startButtonText}>{uploading ? 'Processing...' : 'Log First Photo'}</Text>
-            </LinearGradient>
+          <TouchableOpacity
+            style={[styles.startButton, uploading && styles.buttonDisabled]}
+            onPress={logProgressPhoto}
+            disabled={uploading}
+          >
+            <Text style={styles.startButtonText}>{uploading ? 'Processing...' : 'Log First Photo'}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -267,94 +270,94 @@ export default function ProgressScreen() {
               {calendarDays.map(day => {
                 const key = format(day, 'yyyy-MM-dd');
                 const dayPhotos = photosByDate[key] ?? [];
-                const latestDayPhoto = dayPhotos[0] ?? null;
-                const extraCount = dayPhotos.length > 1 ? dayPhotos.length - 1 : 0;
+                const hasPhotos = dayPhotos.length > 0;
                 const isToday = isSameDay(day, new Date());
-                const isSelected = selectedDay ? isSameDay(day, selectedDay) : false;
 
                 return (
                   <TouchableOpacity
                     key={key}
-                    style={[
-                      styles.dayCell,
-                      isToday && styles.dayCellToday,
-                      isSelected && styles.dayCellSelected,
-                    ]}
+                    style={styles.dayCell}
                     onPress={() => {
                       if (dayPhotos.length === 0) return;
                       setSelectedDay(day);
                       const idx = photos.findIndex(p => p.id === dayPhotos[0].id);
                       if (idx >= 0) openModal(idx);
                     }}
-                    activeOpacity={dayPhotos.length > 0 ? 0.8 : 1}
+                    activeOpacity={hasPhotos ? 0.7 : 1}
                   >
-                    {latestDayPhoto ? (
-                      <>
-                        <Image
-                          source={{ uri: latestDayPhoto.photo_url }}
-                          style={styles.dayCellImage}
-                          onError={() => {}}
-                        />
-                        <View style={styles.dayCellOverlay}>
-                          <Text style={styles.dayCellNumber}>{format(day, 'd')}</Text>
-                        </View>
-                        {extraCount > 0 && (
-                          <View style={styles.dayCellBadge}>
-                            <Text style={styles.dayCellBadgeText}>+{extraCount}</Text>
-                          </View>
-                        )}
-                      </>
-                    ) : (
-                      <Text style={[styles.dayCellNumber, isToday && styles.dayCellNumberToday]}>
+                    <View
+                      style={[
+                        styles.dayCellCircle,
+                        hasPhotos && styles.dayCellLogged,
+                        isToday && !hasPhotos && styles.dayCellToday,
+                        isToday && hasPhotos && styles.dayCellTodayLogged,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.dayCellNumber,
+                          hasPhotos && styles.dayCellNumberLogged,
+                          isToday && !hasPhotos && styles.dayCellNumberToday,
+                        ]}
+                      >
                         {format(day, 'd')}
                       </Text>
-                    )}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
             </View>
           </View>
 
-          {/* ── 2. BEFORE & AFTER ────────────────────────────────────────── */}
+          {/* ── 2. WEEK COMPARISON ───────────────────────────────────────── */}
           {photos.length >= 2 ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Before & After</Text>
-              <Text style={styles.cardSubtitle}>Earliest vs. most recent</Text>
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>WEEK {currentWeek} COMPARISON</Text>
               <View style={styles.comparisonRow}>
-                <TouchableOpacity style={styles.comparisonPhoto} onPress={() => openModal(photos.length - 1)}>
-                  <Image source={{ uri: firstPhoto.photo_url }} style={styles.compareImage} />
-                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.photoLabel}>
-                    <Text style={styles.photoLabelText}>{format(new Date(firstPhoto.created_at), 'MMM d')}</Text>
-                    <Text style={styles.photoLabelSub}>Score: {firstPhoto.severity_score.toFixed(1)}</Text>
-                  </LinearGradient>
+                <TouchableOpacity style={styles.comparisonCard} onPress={() => openModal(0)}>
+                  <Image source={{ uri: latestPhoto.image_url }} style={styles.compareImage} />
+                  <View style={styles.compareInfo}>
+                    <Text style={styles.compareDateText}>{format(new Date(latestPhoto.created_at), 'MMM d')}</Text>
+                    <Text style={styles.compareWeekText}>Week {currentWeek} · Today</Text>
+                  </View>
                 </TouchableOpacity>
-                <View style={styles.comparisonMiddle}>
-                  <Text style={styles.comparisonArrow}>→</Text>
-                  {latestPhoto?.improvement_percentage != null && (
-                    <View style={[styles.improvementPill, { backgroundColor: latestPhoto.improvement_percentage >= 0 ? Colors.successLight : Colors.errorLight }]}>
-                      <Text style={[styles.improvementPillText, { color: latestPhoto.improvement_percentage >= 0 ? Colors.success : Colors.error }]}>
-                        {latestPhoto.improvement_percentage > 0 ? '+' : ''}{latestPhoto.improvement_percentage.toFixed(0)}%
-                      </Text>
-                    </View>
-                  )}
+                <TouchableOpacity style={styles.comparisonCard} onPress={() => openModal(photos.length - 1)}>
+                  <Image source={{ uri: firstPhoto.image_url }} style={styles.compareImage} />
+                  <View style={styles.compareInfo}>
+                    <Text style={styles.compareDateText}>{format(new Date(firstPhoto.created_at), 'MMM d')}</Text>
+                    <Text style={styles.compareWeekText}>Week {firstPhoto.week_number}</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {/* Metric cards */}
+              <View style={styles.metricsRow}>
+                <View style={styles.metricCard}>
+                  <Text style={styles.metricLabel}>Inflammatory lesions</Text>
+                  <Text style={styles.metricValue}>
+                    {latestPhoto.improvement_percentage != null
+                      ? `↓ ${Math.abs(latestPhoto.improvement_percentage).toFixed(0)}%`
+                      : '—'}
+                  </Text>
                 </View>
-                <TouchableOpacity style={styles.comparisonPhoto} onPress={() => openModal(0)}>
-                  <Image source={{ uri: latestPhoto.photo_url }} style={styles.compareImage} />
-                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.6)']} style={styles.photoLabel}>
-                    <Text style={styles.photoLabelText}>{format(new Date(latestPhoto.created_at), 'MMM d')}</Text>
-                    <Text style={styles.photoLabelSub}>Score: {latestPhoto.severity_score.toFixed(1)}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                <View style={styles.metricCard}>
+                  <Text style={styles.metricLabel}>Redness score</Text>
+                  <Text style={styles.metricValue}>
+                    {latestPhoto.severity_score != null
+                      ? `↓ ${Math.max(0, Math.round((1 - latestPhoto.severity_score / (firstPhoto?.severity_score || 10)) * 100))}%`
+                      : '—'}
+                  </Text>
+                </View>
               </View>
             </View>
           ) : (
-            <View style={[styles.card, styles.placeholderCard]}>
-              <Text style={styles.cardTitle}>Before & After</Text>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Week Comparison</Text>
               <Text style={styles.placeholderText}>Log a second check-in to compare your progress over time.</Text>
             </View>
           )}
 
-          {/* ── 4. SEVERITY CHART ────────────────────────────────────────── */}
+          {/* ── 3. SEVERITY CHART ────────────────────────────────────────── */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Severity Over Time</Text>
             <Text style={styles.cardSubtitle}>Lower score = clearer skin</Text>
@@ -420,7 +423,7 @@ export default function ProgressScreen() {
             }}
             renderItem={({ item: photo }) => (
               <ScrollView style={{ width: SCREEN_WIDTH }} contentContainerStyle={styles.modalItemContent}>
-                <Image source={{ uri: photo.photo_url }} style={styles.modalImage} resizeMode="cover" />
+                <Image source={{ uri: photo.image_url }} style={styles.modalImage} resizeMode="cover" />
 
                 <View style={styles.modalBadgeRow}>
                   <View style={styles.modalBadge}>
@@ -447,9 +450,9 @@ export default function ProgressScreen() {
                 {/* AI notes */}
                 <View style={styles.modalSection}>
                   <Text style={styles.modalSectionTitle}>AI Analysis</Text>
-                  <LinearGradient colors={['#FFF0F5', '#FFF8FB']} style={styles.modalInsightBox}>
+                  <View style={styles.modalInsightBox}>
                     <Text style={styles.modalInsightText}>{photo.analysis_notes}</Text>
-                  </LinearGradient>
+                  </View>
                 </View>
 
                 {/* Zone breakdown */}
@@ -485,9 +488,7 @@ export default function ProgressScreen() {
                     onPress={saveNote}
                     disabled={savingNote}
                   >
-                    <LinearGradient colors={[Colors.secondary, Colors.primary]} style={styles.saveNoteBtnGradient}>
-                      <Text style={styles.saveNoteBtnText}>{savingNote ? 'Saving...' : 'Save Note'}</Text>
-                    </LinearGradient>
+                    <Text style={styles.saveNoteBtnText}>{savingNote ? 'Saving...' : 'Save Note'}</Text>
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -508,25 +509,58 @@ function decode(base64: string): Uint8Array {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  header: { paddingHorizontal: Spacing.xxl, paddingTop: Spacing.md, paddingBottom: Spacing.md },
+
+  // Header
+  header: {
+    paddingHorizontal: Spacing.xxl,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    backgroundColor: Colors.background,
+  },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { ...Typography.displaySmall, color: Colors.text },
-  headerSubtitle: { ...Typography.bodySmall, color: Colors.textMuted },
-  logButton: { borderRadius: BorderRadius.md, overflow: 'hidden', ...Shadows.md },
-  logButtonGradient: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, justifyContent: 'center', alignItems: 'center', minWidth: 80, minHeight: 36 },
+  headerTitle: { ...Typography.displayMedium, color: Colors.text },
+  headerSubtitle: { ...Typography.bodySmall, color: Colors.textMuted, marginTop: Spacing.xxs },
+  logButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 80,
+    minHeight: 36,
+    ...Shadows.sm,
+  },
   logButtonText: { ...Typography.labelLarge, color: Colors.white },
   buttonDisabled: { opacity: 0.6 },
 
+  // Empty / Loading
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl, gap: Spacing.lg },
   emptyEmoji: { fontSize: 64 },
   emptyTitle: { ...Typography.displaySmall, color: Colors.text, textAlign: 'center' },
   emptySubtitle: { ...Typography.bodyMedium, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
-  startButton: { width: '80%', borderRadius: BorderRadius.md, overflow: 'hidden', ...Shadows.md },
-  startButtonGradient: { height: 54, justifyContent: 'center', alignItems: 'center' },
+  startButton: {
+    width: '80%',
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    height: 54,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.md,
+  },
   startButtonText: { ...Typography.headlineSmall, color: Colors.white },
 
+  // Scroll
   scrollContent: { padding: Spacing.xxl, gap: Spacing.lg, paddingBottom: 100 },
-  card: { backgroundColor: Colors.white, borderRadius: BorderRadius.xl, padding: Spacing.xl, ...Shadows.md, gap: Spacing.md },
+
+  // Cards
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    ...Shadows.sm,
+    gap: Spacing.md,
+  },
   cardTitle: { ...Typography.headlineSmall, color: Colors.text },
   cardSubtitle: { ...Typography.caption, color: Colors.textMuted, marginTop: -Spacing.sm },
 
@@ -544,58 +578,100 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 2,
-    borderRadius: BorderRadius.sm,
-    overflow: 'hidden',
-    position: 'relative',
   },
-  dayCellToday: { borderWidth: 2, borderColor: Colors.primary },
-  dayCellSelected: { borderWidth: 2, borderColor: Colors.secondary },
-  dayCellImage: { position: 'absolute', width: '100%', height: '100%' },
-  dayCellOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 2,
-    paddingVertical: 1,
+  dayCellCircle: {
+    width: DAY_CELL * 0.78,
+    height: DAY_CELL * 0.78,
+    borderRadius: DAY_CELL * 0.39,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  dayCellNumber: { ...Typography.caption, color: Colors.textSecondary, fontSize: 10, fontWeight: '600' },
-  dayCellNumberToday: { color: Colors.primary, fontWeight: '800' },
-  dayCellBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
+  dayCellLogged: {
     backgroundColor: Colors.primary,
-    borderRadius: 6,
-    paddingHorizontal: 3,
-    paddingVertical: 1,
   },
-  dayCellBadgeText: { color: Colors.white, fontSize: 7, fontWeight: '700' },
+  dayCellToday: {
+    backgroundColor: Colors.secondary,
+  },
+  dayCellTodayLogged: {
+    backgroundColor: Colors.primary,
+    borderWidth: 2,
+    borderColor: Colors.secondary,
+  },
+  dayCellNumber: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  dayCellNumberLogged: {
+    color: Colors.white,
+    fontWeight: '700',
+  },
+  dayCellNumberToday: {
+    color: Colors.white,
+    fontWeight: '700',
+  },
 
-  // Before / After
-  comparisonRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  comparisonPhoto: { flex: 1, borderRadius: BorderRadius.md, overflow: 'hidden' },
+  // Week Comparison Section
+  sectionBlock: { gap: Spacing.md },
+  sectionLabel: {
+    ...Typography.labelSmall,
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  comparisonRow: { flexDirection: 'row', gap: Spacing.md },
+  comparisonCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    ...Shadows.sm,
+  },
   compareImage: { width: '100%', aspectRatio: 1 },
-  photoLabel: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.sm },
-  photoLabelText: { ...Typography.labelSmall, color: Colors.white },
-  photoLabelSub: { ...Typography.caption, color: 'rgba(255,255,255,0.8)' },
-  comparisonMiddle: { alignItems: 'center', gap: Spacing.xs },
-  comparisonArrow: { fontSize: 20, color: Colors.textMuted },
-  improvementPill: { paddingHorizontal: Spacing.xs, paddingVertical: 2, borderRadius: BorderRadius.pill },
-  improvementPillText: { ...Typography.caption, fontWeight: '700' },
-  placeholderCard: { alignItems: 'flex-start' },
+  compareInfo: { padding: Spacing.md },
+  compareDateText: { ...Typography.labelMedium, color: Colors.text },
+  compareWeekText: { ...Typography.caption, color: Colors.textMuted, marginTop: Spacing.xxs },
+
+  // Metric cards
+  metricsRow: { flexDirection: 'row', gap: Spacing.md },
+  metricCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    ...Shadows.sm,
+  },
+  metricLabel: { ...Typography.caption, color: Colors.textSecondary, marginBottom: Spacing.xs },
+  metricValue: { ...Typography.headlineSmall, color: Colors.success, fontWeight: '700' },
+
   placeholderText: { ...Typography.bodySmall, color: Colors.textMuted },
 
+  // Zone rows
   zoneRow: { flexDirection: 'row', gap: Spacing.md, paddingVertical: Spacing.xs, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   zoneLabel: { ...Typography.labelSmall, color: Colors.primary, width: 90 },
   zoneValue: { ...Typography.bodySmall, color: Colors.textSecondary, flex: 1 },
 
   // Modal
   modalRoot: { flex: 1, backgroundColor: Colors.background },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.borderLight, backgroundColor: Colors.white },
-  modalClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.subtleDeep, justifyContent: 'center', alignItems: 'center' },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.white,
+  },
+  modalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.cardSubtle,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modalCloseText: { color: Colors.textSecondary, fontWeight: '600' },
   modalHeaderTitle: { ...Typography.labelLarge, color: Colors.text, flex: 1, textAlign: 'center' },
   modalNav: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
@@ -607,16 +683,45 @@ const styles = StyleSheet.create({
   modalItemContent: { padding: Spacing.xl, gap: Spacing.lg, paddingBottom: 100 },
   modalImage: { width: '100%', aspectRatio: 1, borderRadius: BorderRadius.xl },
   modalBadgeRow: { flexDirection: 'row', gap: Spacing.sm },
-  modalBadge: { flex: 1, alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.cardSubtle, gap: 2 },
+  modalBadge: {
+    flex: 1,
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.cardSubtle,
+    gap: 2,
+  },
   modalBadgeLabel: { ...Typography.caption, color: Colors.textMuted },
   modalBadgeValue: { ...Typography.headlineSmall, color: Colors.text },
   modalSection: { gap: Spacing.sm },
   modalSectionTitle: { ...Typography.headlineSmall, color: Colors.text },
-  modalInsightBox: { borderRadius: BorderRadius.md, padding: Spacing.lg },
+  modalInsightBox: {
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    backgroundColor: Colors.cardSubtle,
+  },
   modalInsightText: { ...Typography.bodySmall, color: Colors.textSecondary, lineHeight: 20 },
 
-  notesInput: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: Spacing.lg, minHeight: 100, ...Typography.bodyMedium, color: Colors.text, textAlignVertical: 'top', backgroundColor: Colors.white },
-  saveNoteBtn: { borderRadius: BorderRadius.md, overflow: 'hidden', ...Shadows.sm },
-  saveNoteBtnGradient: { height: 44, justifyContent: 'center', alignItems: 'center' },
+  notesInput: {
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    minHeight: 100,
+    ...Typography.bodyMedium,
+    color: Colors.text,
+    textAlignVertical: 'top',
+    backgroundColor: Colors.white,
+  },
+  saveNoteBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.sm,
+  },
   saveNoteBtnText: { ...Typography.labelLarge, color: Colors.white },
 });

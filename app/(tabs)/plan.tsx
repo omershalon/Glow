@@ -12,6 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Svg, { Circle } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import type { Database, RankedItem, AcneType } from '@/lib/database.types';
@@ -19,34 +20,65 @@ import type { Database, RankedItem, AcneType } from '@/lib/database.types';
 type PersonalizedPlan = Database['public']['Tables']['personalized_plans']['Row'];
 type Tab = 'picks' | 'routine';
 
-const PILLAR_COLORS: Record<string, string> = {
-  herbal:    '#8B7355',
-  diet:      '#4A7C59',
-  product:   '#4A6FA5',
-  lifestyle: '#A55454',
-};
-
-const PILLAR_LABELS: Record<string, string> = {
-  product:   'Skincare',
-  diet:      'Diet & Nutrition',
-  herbal:    'Herbal & Natural',
-  lifestyle: 'Lifestyle',
-};
-
 const PILLAR_ICONS: Record<string, string> = {
   product:   '🧴',
   diet:      '🥗',
   herbal:    '🌿',
-  lifestyle: '🏃',
+  lifestyle: '🌙',
 };
 
-const ACNE_ZONE: Record<AcneType, string> = {
-  hormonal:     'JAWLINE',
-  cystic:       'CHEEKS',
-  comedonal:    'T-ZONE',
-  fungal:       'FOREHEAD',
-  inflammatory: 'CHEEKS',
+const PILLAR_LABELS: Record<string, string> = {
+  product:   'SKINCARE',
+  diet:      'DIET',
+  herbal:    'HERBAL',
+  lifestyle: 'LIFESTYLE',
 };
+
+const PILLAR_ORDER = ['product', 'diet', 'herbal', 'lifestyle'];
+
+const ACNE_LABELS: Record<AcneType, string> = {
+  hormonal:     'HORMONAL',
+  cystic:       'CYSTIC',
+  comedonal:    'COMEDONAL',
+  fungal:       'FUNGAL',
+  inflammatory: 'INFLAMMATORY',
+};
+
+/* ── Progress Ring Component ── */
+function ProgressRing({ progress, size = 56, strokeWidth = 4 }: { progress: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - progress);
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute' }}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={Colors.borderLight}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={Colors.primary}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={`${circumference}`}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          rotation="-90"
+          origin={`${size / 2}, ${size / 2}`}
+        />
+      </Svg>
+      <Text style={styles.progressPercent}>{Math.round(progress * 100)}%</Text>
+    </View>
+  );
+}
 
 export default function PlanScreen() {
   const insets = useSafeAreaInsets();
@@ -210,83 +242,31 @@ export default function PlanScreen() {
     }
   };
 
+
   /* ── derived data ── */
   const rankedItems: RankedItem[] = (plan?.ranked_items as unknown as RankedItem[]) ?? [];
   const routineItems = rankedItems.filter((i) => routineRanks.has(i.impact_rank));
 
-  const groupedRoutine = routineItems.reduce<Record<string, RankedItem[]>>((acc, item) => {
-    if (!acc[item.pillar]) acc[item.pillar] = [];
-    acc[item.pillar].push(item);
-    return acc;
-  }, {});
+  const groupByPillar = (items: RankedItem[]) => {
+    const grouped: Record<string, RankedItem[]> = {};
+    items.forEach((item) => {
+      if (!grouped[item.pillar]) grouped[item.pillar] = [];
+      grouped[item.pillar].push(item);
+    });
+    // Sort by PILLAR_ORDER
+    const sorted: [string, RankedItem[]][] = [];
+    PILLAR_ORDER.forEach((p) => {
+      if (grouped[p]) sorted.push([p, grouped[p]]);
+    });
+    return sorted;
+  };
+
+  const groupedPicks = groupByPillar(rankedItems);
+  const groupedRoutine = groupByPillar(routineItems);
 
   const doneCount = routineItems.filter((i) => doneToday.has(i.impact_rank)).length;
   const totalCount = routineItems.length;
   const progress = totalCount > 0 ? doneCount / totalCount : 0;
-
-  /* ── picks row renderer ── */
-  const renderPickRow = (item: RankedItem) => {
-    const added = routineRanks.has(item.impact_rank);
-    const expanded = expandedRank === item.impact_rank;
-    const color = PILLAR_COLORS[item.pillar] ?? Colors.primary;
-    return (
-      <View key={item.impact_rank}>
-        <TouchableOpacity
-          style={[styles.row, added && styles.rowAdded]}
-          onPress={() => setExpandedRank(expanded ? null : item.impact_rank)}
-          activeOpacity={0.7}
-        >
-          {/* left badge */}
-          <View style={[styles.badge, { backgroundColor: color }]}>
-            <Text style={styles.badgeText}>
-              {item.pillar.charAt(0).toUpperCase() + item.pillar.slice(1)}
-            </Text>
-          </View>
-
-          {/* text */}
-          <View style={styles.rowBody}>
-            <Text style={styles.rowTitle}>{item.title}</Text>
-            {!expanded && (
-              <Text style={styles.rowRationale} numberOfLines={1}>{item.rationale}</Text>
-            )}
-          </View>
-
-          {/* chevron */}
-          <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
-
-          {/* add / check button */}
-          <TouchableOpacity
-            style={[styles.addBtn, added && styles.addBtnAdded]}
-            onPress={() => toggleItem(item)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.addIcon, added && styles.addIconAdded]}>
-              {added ? '✓' : '+'}
-            </Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-
-        {/* expanded panel */}
-        {expanded && (
-          <View style={[styles.expandedPanel, added && styles.expandedPanelAdded]}>
-            <Text style={styles.expandedRationale}>{item.rationale}</Text>
-            <TouchableOpacity
-              style={[styles.addToRoutineBtn, added && styles.addToRoutineBtnDone]}
-              onPress={() => toggleItem(item)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.addToRoutineBtnText, added && styles.addToRoutineBtnTextDone]}>
-                {added ? '✓ Remove from Routine' : '+ Add to My Routine'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={styles.divider} />
-      </View>
-    );
-  };
 
   /* ── empty / loading states ── */
   if (loading) {
@@ -321,7 +301,7 @@ export default function PlanScreen() {
             end={{ x: 1, y: 0 }}
           >
             <Text style={styles.generateBtnText}>
-              {generating ? 'Generating…' : plan ? 'Refresh Plan' : 'Generate My Plan'}
+              {generating ? 'Generating...' : plan ? 'Refresh Plan' : 'Generate My Plan'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -333,44 +313,99 @@ export default function PlanScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* header */}
-      <LinearGradient colors={['#FFF0F5', '#FFE0ED']} style={styles.header}>
+      <View style={styles.header}>
         {acneType && (
           <Text style={styles.acneLabel}>
-            {acneType.toUpperCase()} ACNE · {ACNE_ZONE[acneType]}
+            {ACNE_LABELS[acneType]} {'\u00B7'} COMBINATION
           </Text>
         )}
-        <Text style={styles.subheader}>
-          Ranked by impact — tap any item to expand or add to your routine
-        </Text>
+        <Text style={styles.headerTitle}>Your plan</Text>
 
-        {/* tabs */}
-        <View style={styles.tabs}>
+        {/* pill toggle */}
+        <View style={styles.pillToggle}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'picks' && styles.tabActive]}
+            style={[styles.pillTab, activeTab === 'picks' && styles.pillTabActive]}
             onPress={() => setActiveTab('picks')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, activeTab === 'picks' && styles.tabTextActive]}>
+            <Text style={[styles.pillTabText, activeTab === 'picks' && styles.pillTabTextActive]}>
               Picks
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'routine' && styles.tabActive]}
+            style={[styles.pillTab, activeTab === 'routine' && styles.pillTabActive]}
             onPress={() => setActiveTab('routine')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, activeTab === 'routine' && styles.tabTextActive]}>
+            <Text style={[styles.pillTabText, activeTab === 'routine' && styles.pillTabTextActive]}>
               My Routine{routineRanks.size > 0 ? ` (${routineRanks.size})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
 
       {/* ── PICKS TAB ── */}
       {activeTab === 'picks' ? (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {rankedItems.map(renderPickRow)}
+          {groupedPicks.map(([pillar, items]) => (
+            <View key={pillar} style={styles.pillarSection}>
+              <View style={styles.pillarHeader}>
+                <Text style={styles.pillarIcon}>{PILLAR_ICONS[pillar] ?? '•'}</Text>
+                <Text style={styles.pillarLabel}>{PILLAR_LABELS[pillar] ?? pillar.toUpperCase()}</Text>
+              </View>
+
+              {items.map((item) => {
+                const added = routineRanks.has(item.impact_rank);
+                return (
+                  <View key={item.impact_rank}>
+                    <TouchableOpacity
+                      style={styles.pickCard}
+                      onPress={() => setExpandedRank(expandedRank === item.impact_rank ? null : item.impact_rank)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.pickCardBody}>
+                        <Text style={styles.pickTitle}>{item.title}</Text>
+                        <Text style={styles.pickSubtitle} numberOfLines={1}>{item.rationale}</Text>
+                      </View>
+                      <View style={styles.pickCardRight}>
+                        <Text style={styles.pickChevron}>{'›'}</Text>
+                        <TouchableOpacity
+                          style={[styles.circleBtn, added && styles.circleBtnAdded]}
+                          onPress={() => toggleItem(item)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.circleBtnIcon, added && styles.circleBtnIconAdded]}>
+                            {added ? '✓' : '+'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* expanded detail */}
+                    {expandedRank === item.impact_rank && (
+                      <View style={styles.expandedPanel}>
+                        <Text style={styles.expandedRationale}>{item.rationale}</Text>
+                        <TouchableOpacity
+                          style={[styles.expandedBtn, added && styles.expandedBtnAdded]}
+                          onPress={() => toggleItem(item)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.expandedBtnText, added && styles.expandedBtnTextAdded]}>
+                            {added ? '✓ Remove from Routine' : '+ Add to My Routine'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          ))}
+
           <TouchableOpacity style={styles.regenRow} onPress={generatePlan} disabled={generating}>
             <Text style={styles.regenText}>
-              {generating ? 'Generating…' : '↻  Regenerate plan'}
+              {generating ? 'Generating...' : '↻  Regenerate plan'}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -384,8 +419,8 @@ export default function PlanScreen() {
           <Text style={styles.emptySubtitle}>
             Go to Picks and tap + on anything you want to start doing
           </Text>
-          <TouchableOpacity style={styles.switchTab} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.switchTabText}>View Picks →</Text>
+          <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
+            <Text style={styles.addMoreText}>+ Add more from Picks</Text>
           </TouchableOpacity>
         </View>
 
@@ -395,19 +430,12 @@ export default function PlanScreen() {
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
 
           {/* progress header */}
-          <View style={styles.todayHeader}>
-            <View style={styles.todayInfo}>
-              <Text style={styles.todayTitle}>Today's Routine</Text>
-              <Text style={styles.todaySubtitle}>{doneCount} of {totalCount} completed</Text>
+          <View style={styles.routineHeader}>
+            <View style={styles.routineHeaderLeft}>
+              <Text style={styles.routineTitle}>Today's Routine</Text>
+              <Text style={styles.routineSubtitle}>{doneCount} of {totalCount} completed</Text>
             </View>
-            <View style={styles.progressCircle}>
-              <Text style={styles.progressPercent}>{Math.round(progress * 100)}%</Text>
-            </View>
-          </View>
-
-          {/* progress bar */}
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: `${Math.round(progress * 100)}%` as any }]} />
+            <ProgressRing progress={progress} size={56} strokeWidth={4} />
           </View>
 
           {/* all done banner */}
@@ -422,52 +450,43 @@ export default function PlanScreen() {
           )}
 
           {/* grouped by pillar */}
-          {Object.entries(groupedRoutine).map(([pillar, items]) => (
+          {groupedRoutine.map(([pillar, items]) => (
             <View key={pillar} style={styles.pillarSection}>
               <View style={styles.pillarHeader}>
                 <Text style={styles.pillarIcon}>{PILLAR_ICONS[pillar] ?? '•'}</Text>
-                <Text style={[styles.pillarLabel, { color: PILLAR_COLORS[pillar] }]}>
-                  {PILLAR_LABELS[pillar] ?? pillar}
-                </Text>
+                <Text style={styles.pillarLabel}>{PILLAR_LABELS[pillar] ?? pillar.toUpperCase()}</Text>
               </View>
 
               {items.map((item) => {
                 const done = doneToday.has(item.impact_rank);
                 return (
-                  <TouchableOpacity
-                    key={item.impact_rank}
-                    style={[styles.todoRow, done && styles.todoRowDone]}
-                    onPress={() => toggleDone(item.impact_rank)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[
-                      styles.checkbox,
-                      done && { borderColor: PILLAR_COLORS[item.pillar], backgroundColor: PILLAR_COLORS[item.pillar] },
-                    ]}>
-                      {done && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <View style={styles.todoBody}>
-                      <Text style={[styles.todoTitle, done && styles.todoTitleDone]}>
+                  <View key={item.impact_rank} style={styles.routineCard}>
+                    <TouchableOpacity
+                      style={styles.routineCardInner}
+                      onPress={() => toggleDone(item.impact_rank)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.checkbox, done && styles.checkboxDone]}>
+                        {done && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={[styles.routineItemTitle, done && styles.routineItemTitleDone]}>
                         {item.title}
                       </Text>
-                      <Text style={styles.todoRationale} numberOfLines={2}>
-                        {item.rationale}
-                      </Text>
-                    </View>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => toggleItem(item)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <Text style={styles.removeIcon}>×</Text>
                     </TouchableOpacity>
-                  </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
           ))}
 
-          <TouchableOpacity style={styles.switchTab} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.switchTabText}>+ Add more from Picks</Text>
+          <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
+            <Text style={styles.addMoreText}>+ Add more from Picks</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -492,76 +511,166 @@ export default function PlanScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: Colors.background },
-  centered:   { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xxl, gap: Spacing.lg },
+  container: { flex: 1, backgroundColor: Colors.background },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xxl, gap: Spacing.lg },
 
-  /* header */
-  header: { paddingHorizontal: Spacing.xxl, paddingTop: Spacing.lg, paddingBottom: 0 },
-  acneLabel: { fontSize: 11, fontWeight: '600', color: Colors.textMuted, letterSpacing: 1.5, marginBottom: Spacing.xs },
-  subheader: { ...Typography.bodySmall, color: Colors.textSecondary, marginBottom: Spacing.lg },
-
-  /* tabs */
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
-  tab: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+  /* ── header ── */
+  header: {
+    paddingHorizontal: Spacing.xxl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.lg,
   },
-  tabActive:     { borderBottomColor: Colors.primary },
-  tabText:       { ...Typography.labelMedium, color: Colors.textMuted },
-  tabTextActive: { color: Colors.primary, fontWeight: '700' },
+  acneLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: Spacing.xs,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.3,
+    marginBottom: Spacing.lg,
+  },
 
-  /* list */
-  list:        { flex: 1 },
+  /* ── pill toggle ── */
+  pillToggle: {
+    flexDirection: 'row',
+    borderRadius: BorderRadius.pill,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    padding: 3,
+  },
+  pillTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: BorderRadius.pill,
+  },
+  pillTabActive: {
+    backgroundColor: Colors.primary,
+  },
+  pillTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  pillTabTextActive: {
+    color: Colors.white,
+  },
+
+  /* ── list ── */
+  list: { flex: 1 },
   listContent: { paddingBottom: 100 },
 
-  /* picks row */
-  row: {
+  /* ── pillar sections ── */
+  pillarSection: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.xxl,
+    gap: Spacing.md,
+  },
+  pillarHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.lg,
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+  },
+  pillarIcon: { fontSize: 16 },
+  pillarLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+
+  /* ── pick card ── */
+  pickCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.lg,
+    paddingLeft: Spacing.xl,
+    paddingRight: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
-  rowAdded: { backgroundColor: '#F2FAF5' },
-
-  badge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.pill,
-    flexShrink: 0,
+  pickCardBody: {
+    flex: 1,
+    gap: 4,
   },
-  badgeText: { fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
-
-  rowBody:      { flex: 1, gap: 3 },
-  rowTitle:     { ...Typography.labelLarge, color: Colors.text, lineHeight: 20 },
-  rowRationale: { ...Typography.bodySmall, color: Colors.textMuted, lineHeight: 18 },
-
-  chevron: { fontSize: 10, color: Colors.textMuted, flexShrink: 0 },
-
-  addBtn: {
-    width: 28, height: 28, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.border,
-    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  pickTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    lineHeight: 22,
   },
-  addBtnAdded:  { borderColor: Colors.success, backgroundColor: Colors.success },
-  addIcon:      { fontSize: 16, color: Colors.textMuted, lineHeight: 20 },
-  addIconAdded: { color: Colors.white, fontSize: 14 },
+  pickSubtitle: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    lineHeight: 18,
+  },
+  pickCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginLeft: Spacing.md,
+  },
+  pickChevron: {
+    fontSize: 22,
+    color: Colors.borderLight,
+    fontWeight: '300',
+  },
+  circleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  circleBtnAdded: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  circleBtnIcon: {
+    fontSize: 20,
+    color: Colors.textMuted,
+    lineHeight: 24,
+  },
+  circleBtnIconAdded: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
 
-  /* expanded panel */
+  /* ── expanded panel ── */
   expandedPanel: {
-    paddingHorizontal: Spacing.xxl,
+    backgroundColor: Colors.white,
+    borderBottomLeftRadius: BorderRadius.xl,
+    borderBottomRightRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.lg,
     paddingTop: Spacing.xs,
-    backgroundColor: Colors.white,
+    marginTop: -Spacing.md,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: Colors.borderLight,
     gap: Spacing.md,
   },
-  expandedPanelAdded: { backgroundColor: '#F2FAF5' },
-  expandedRationale: { ...Typography.bodySmall, color: Colors.textSecondary, lineHeight: 20 },
-  addToRoutineBtn: {
+  expandedRationale: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  expandedBtn: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
@@ -569,128 +678,150 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.primary,
   },
-  addToRoutineBtnDone: { borderColor: Colors.success, backgroundColor: '#F2FAF5' },
-  addToRoutineBtnText: { ...Typography.labelSmall, color: Colors.primary },
-  addToRoutineBtnTextDone: { color: Colors.success },
+  expandedBtnAdded: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  expandedBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  expandedBtnTextAdded: {
+    color: Colors.white,
+  },
 
-  divider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: Spacing.xxl },
-
-  /* empty */
-  emptyEmoji:    { fontSize: 52 },
-  emptyTitle:    { ...Typography.headlineLarge, color: Colors.text, textAlign: 'center' },
-  emptySubtitle: { ...Typography.bodyMedium, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
-
-  /* generate */
-  generateBtn: { width: '100%', borderRadius: BorderRadius.md, overflow: 'hidden', ...Shadows.md, marginTop: Spacing.sm },
-  generateGradient: { height: 54, justifyContent: 'center', alignItems: 'center' },
-  generateBtnText: { ...Typography.headlineSmall, color: Colors.white },
-
-  /* regen row */
-  regenRow: { alignItems: 'center', paddingVertical: Spacing.xl },
-  regenText: { ...Typography.bodySmall, color: Colors.textMuted },
-
-  /* switch tab link */
-  switchTab: { alignItems: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg },
-  switchTabText: { ...Typography.labelLarge, color: Colors.primary },
-
-  /* ── routine / todo styles ── */
-  todayHeader: {
+  /* ── routine header ── */
+  routineHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.xxl,
     paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
-  todayInfo: { gap: 4 },
-  todayTitle: { ...Typography.headlineMedium, color: Colors.text },
-  todaySubtitle: { ...Typography.bodySmall, color: Colors.textMuted },
+  routineHeaderLeft: { gap: 4 },
+  routineTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  routineSubtitle: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  progressPercent: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
 
-  progressCircle: {
-    width: 56, height: 56,
-    borderRadius: 28,
-    borderWidth: 3,
-    borderColor: Colors.primary,
+  /* ── routine card ── */
+  routineCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.lg,
+    paddingLeft: Spacing.lg,
+    paddingRight: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  routineCardInner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFF0F5',
+    flexShrink: 0,
   },
-  progressPercent: { ...Typography.labelMedium, color: Colors.primary, fontWeight: '700' },
-
-  progressBarBg: {
-    height: 4,
-    backgroundColor: Colors.borderLight,
-    marginHorizontal: Spacing.xxl,
-    borderRadius: 2,
-    marginBottom: Spacing.lg,
-  },
-  progressBarFill: {
-    height: 4,
+  checkboxDone: {
+    borderColor: Colors.primary,
     backgroundColor: Colors.primary,
-    borderRadius: 2,
+  },
+  checkmark: {
+    fontSize: 14,
+    color: Colors.white,
+    fontWeight: '700',
+  },
+  routineItemTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text,
+    flex: 1,
+  },
+  routineItemTitleDone: {
+    textDecorationLine: 'line-through',
+    color: Colors.textMuted,
+  },
+  removeIcon: {
+    fontSize: 22,
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.sm,
   },
 
+  /* ── all done ── */
   allDoneCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     marginHorizontal: Spacing.xxl,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
     backgroundColor: '#F2FAF5',
-    borderRadius: BorderRadius.xl,
+    borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.success + '40',
   },
-  allDoneEmoji:   { fontSize: 32 },
-  allDoneTitle:   { ...Typography.labelLarge, color: Colors.success },
+  allDoneEmoji: { fontSize: 32 },
+  allDoneTitle: { ...Typography.labelLarge, color: Colors.success },
   allDoneSubtext: { ...Typography.bodySmall, color: Colors.textMuted },
 
-  pillarSection: {
-    marginHorizontal: Spacing.xxl,
-    marginBottom: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  pillarHeader: {
-    flexDirection: 'row',
+  /* ── add more link ── */
+  addMoreLink: {
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.xxl,
   },
-  pillarIcon:  { fontSize: 16 },
-  pillarLabel: { ...Typography.labelMedium, fontWeight: '700', letterSpacing: 0.5 },
-
-  todoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.md,
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    ...Shadows.sm,
+  addMoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.textMuted,
   },
-  todoRowDone: { opacity: 0.55 },
 
-  checkbox: {
-    width: 24, height: 24, borderRadius: 12,
-    borderWidth: 2, borderColor: Colors.border,
-    justifyContent: 'center', alignItems: 'center',
-    flexShrink: 0, marginTop: 2,
-  },
-  checkmark: { fontSize: 12, color: Colors.white, fontWeight: '700' },
+  /* ── regen ── */
+  regenRow: { alignItems: 'center', paddingVertical: Spacing.xl },
+  regenText: { ...Typography.bodySmall, color: Colors.textMuted },
 
-  todoBody:      { flex: 1, gap: 3 },
-  todoTitle:     { ...Typography.labelMedium, color: Colors.text, lineHeight: 20 },
-  todoTitleDone: { textDecorationLine: 'line-through', color: Colors.textMuted },
-  todoRationale: { ...Typography.caption, color: Colors.textMuted, lineHeight: 18 },
-  removeIcon:    { fontSize: 20, color: Colors.textMuted, lineHeight: 24, paddingHorizontal: 4 },
+  /* ── empty state ── */
+  emptyEmoji: { fontSize: 52 },
+  emptyTitle: { ...Typography.headlineLarge, color: Colors.text, textAlign: 'center' },
+  emptySubtitle: { ...Typography.bodyMedium, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
 
-  /* toast */
+  /* ── generate ── */
+  generateBtn: { width: '100%', borderRadius: BorderRadius.md, overflow: 'hidden', ...Shadows.md, marginTop: Spacing.sm },
+  generateGradient: { height: 54, justifyContent: 'center', alignItems: 'center' },
+  generateBtnText: { ...Typography.headlineSmall, color: Colors.white },
+
+  /* ── toast ── */
   toast: {
-    position: 'absolute', bottom: 100, alignSelf: 'center',
-    backgroundColor: Colors.success,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.pill, ...Shadows.lg,
+    position: 'absolute',
+    bottom: 100,
+    alignSelf: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.pill,
+    ...Shadows.lg,
   },
   toastText: { ...Typography.labelMedium, color: Colors.white },
 });

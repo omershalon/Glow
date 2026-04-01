@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,9 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
@@ -19,94 +20,89 @@ import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import type { SkinType, AcneType, Severity } from '@/lib/database.types';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+interface Finding {
+  title: string;
+  description: string;
+}
+
 interface AnalysisResult {
   skin_type: SkinType;
   acne_type: AcneType;
   severity: Severity;
+  severity_score?: number;
   analysis_notes: string;
+  findings?: Finding[];
   confidence: number;
 }
 
-const SKIN_TYPE_COLORS: Record<SkinType, string> = {
-  oily: '#7CB9E8',
-  dry: '#F5A623',
-  combination: '#9B59B6',
-  sensitive: '#E8547A',
-  normal: '#4CAF87',
+const SEVERITY_LABEL: Record<Severity, string> = {
+  mild: 'MILD',
+  moderate: 'MODERATE',
+  severe: 'SEVERE',
 };
 
-const ACNE_INFO: Record<AcneType, { emoji: string; plain: string; solutions: string[] }> = {
-  hormonal: {
-    emoji: '🌙',
-    plain: 'Your breakouts are driven by hormone shifts — they tend to cluster around your chin and jawline and flare around your cycle. The good news: they respond really well to the right routine.',
-    solutions: ['Cut back on dairy and high-sugar foods', 'Add spearmint tea daily', 'Use a gentle salicylic acid cleanser', 'Try zinc supplements', 'Manage stress — cortisol makes this worse'],
-  },
-  cystic: {
-    emoji: '🔴',
-    plain: 'Cystic acne forms deep under the skin and can be painful. It\'s one of the more stubborn types, but with a consistent routine targeting inflammation you can see real improvement.',
-    solutions: ['Never squeeze — it deepens scarring', 'Use benzoyl peroxide spot treatment', 'Reduce inflammatory foods (fried, processed)', 'Ice inflamed spots to reduce swelling', 'Consider a dermatologist for persistent nodules'],
-  },
-  comedonal: {
-    emoji: '⚫',
-    plain: 'You have clogged pores — blackheads and whiteheads forming when oil and dead skin cells get trapped. This type clears up well with the right exfoliation routine.',
-    solutions: ['Exfoliate with salicylic acid 2–3x per week', 'Use a non-comedogenic moisturiser', 'Add a retinol to your evening routine', 'Double-cleanse if you wear sunscreen or makeup', 'Use pore strips sparingly for blackheads'],
-  },
-  fungal: {
-    emoji: '🍄',
-    plain: 'Fungal acne is caused by yeast, not bacteria — which means most acne products won\'t help. The bumps tend to look uniform and itchy. The fix is antifungal, not antibacterial.',
-    solutions: ['Switch to an antifungal cleanser (zinc pyrithione)', 'Avoid heavy oils on your face', 'Change pillowcases every 2 days', 'Let skin breathe — avoid occlusive products', 'Keep skin dry, especially after exercise'],
-  },
-  inflammatory: {
-    emoji: '🔥',
-    plain: 'Your acne is in an active inflammatory state — red, raised, and reactive. Calming the inflammation is the first priority before anything else.',
-    solutions: ['Use a gentle, fragrance-free cleanser', 'Apply niacinamide serum to reduce redness', 'Cut out spicy foods and alcohol temporarily', 'Use ice wrapped in cloth on inflamed spots', 'Avoid touching your face during flare-ups'],
-  },
+const SEVERITY_RANGE_LABEL: Record<Severity, string> = {
+  mild: 'mild finding range',
+  moderate: 'moderate finding range',
+  severe: 'severe finding range',
+};
+
+
+const SKIN_TYPE_CHIP_LABELS: Record<SkinType, string> = {
+  oily: 'Oily/T-Zone combination',
+  dry: 'Dry & dehydrated',
+  combination: 'Oily/T-Zone combination',
+  sensitive: 'Sensitive & reactive',
+  normal: 'Balanced/Normal',
 };
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [generatingPlan, setGeneratingPlan] = useState(false);
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera access is required for skin analysis.');
-      return;
-    }
+  const capturePhoto = async () => {
+    if (!cameraRef.current) return;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.4,
-      base64: true,
-    });
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+        base64: true,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
-      setResult(null);
-      await analyzePhoto(result.assets[0].uri, result.assets[0].base64 ?? undefined);
+      if (photo) {
+        setPhotoUri(photo.uri);
+        setResult(null);
+        await analyzePhoto(photo.uri, photo.base64 ?? undefined);
+      }
+    } catch (err) {
+      console.error('Capture error:', err);
+      Alert.alert('Capture failed', 'Could not take photo. Please try again.');
     }
   };
 
   const pickPhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.4,
+      quality: 0.7,
       base64: true,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+    if (!pickerResult.canceled && pickerResult.assets[0]) {
+      setPhotoUri(pickerResult.assets[0].uri);
       setResult(null);
-      await analyzePhoto(result.assets[0].uri, result.assets[0].base64 ?? undefined);
+      await analyzePhoto(pickerResult.assets[0].uri, pickerResult.assets[0].base64 ?? undefined);
     }
   };
 
@@ -147,7 +143,6 @@ export default function ScanScreen() {
     if (!user) return;
 
     try {
-      // Upload photo to Supabase Storage
       const base64 = await FileSystem.readAsStringAsync(photoUri, {
         encoding: 'base64' as any,
       });
@@ -167,7 +162,6 @@ export default function ScanScreen() {
         photoUrl = publicUrl;
       }
 
-      // Save skin profile
       const { error: insertError } = await supabase.from('skin_profiles').insert({
         user_id: user.id,
         skin_type: result.skin_type,
@@ -198,7 +192,6 @@ export default function ScanScreen() {
   const generatePlan = async (userId: string) => {
     setGeneratingPlan(true);
     try {
-      // Get the latest skin profile
       const { data: skinProfile } = await supabase
         .from('skin_profiles')
         .select('id')
@@ -226,196 +219,278 @@ export default function ScanScreen() {
     setResult(null);
   };
 
+  const severityScore = result ? (result.severity_score ?? Math.round(result.confidence * 100)) : 0;
+
+  // Use AI-returned findings if available, otherwise build from analysis data
+  const findings = (() => {
+    if (!result) return [];
+    // If the edge function returned findings, use them
+    if (result.findings && result.findings.length > 0) return result.findings;
+
+    // Otherwise build findings from analysis_notes + detected type
+    const acneLabel = result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1);
+    const skinLabel = result.skin_type.charAt(0).toUpperCase() + result.skin_type.slice(1);
+    const sevLabel = result.severity.charAt(0).toUpperCase() + result.severity.slice(1);
+
+    // Split notes into sentences for descriptions
+    const sentences = (result.analysis_notes || '').split(/[.!]\s+/).filter(s => s.trim().length > 8);
+
+    return [
+      {
+        title: `${acneLabel} acne detected`,
+        description: sentences[0]
+          ? (sentences[0].trim().endsWith('.') ? sentences[0].trim() : sentences[0].trim() + '.')
+          : `Your scan indicates ${acneLabel.toLowerCase()} acne patterns based on the location and type of breakouts observed.`,
+      },
+      {
+        title: `${skinLabel} skin type`,
+        description: sentences[1]
+          ? (sentences[1].trim().endsWith('.') ? sentences[1].trim() : sentences[1].trim() + '.')
+          : `Your skin presents as ${skinLabel.toLowerCase()}, which influences product selection and treatment approach.`,
+      },
+      {
+        title: `${sevLabel} severity level`,
+        description: sentences[2]
+          ? (sentences[2].trim().endsWith('.') ? sentences[2].trim() : sentences[2].trim() + '.')
+          : `The overall severity is classified as ${sevLabel.toLowerCase()}, with a score of ${severityScore} out of 100.`,
+      },
+    ];
+  })();
+
+  // ─── Camera / Live View ───
+  if (!photoUri) {
+    // Request permission if not yet granted
+    if (!permission) {
+      return (
+        <View style={[styles.darkContainer, { paddingTop: insets.top }]}>
+          <ActivityIndicator size="large" color={Colors.white} />
+        </View>
+      );
+    }
+
+    if (!permission.granted) {
+      return (
+        <View style={[styles.darkContainer, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center', gap: Spacing.lg, paddingHorizontal: Spacing.xxl }]}>
+          <Text style={{ fontSize: 48 }}>📸</Text>
+          <Text style={{ ...Typography.headlineMedium, color: Colors.white, textAlign: 'center' }}>
+            Camera Access Needed
+          </Text>
+          <Text style={{ ...Typography.bodyMedium, color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
+            We need camera access to scan and analyze your skin
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestPermission}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.permissionButtonText}>Enable Camera</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.darkContainer, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.darkHeader}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backArrow}>{'\u2190'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.darkHeaderTitle}>Skin Scan</Text>
+          <View style={styles.backButton} />
+        </View>
+
+        {/* Live Camera with overlay */}
+        <View style={styles.cameraWrapper}>
+          <CameraView
+            ref={cameraRef}
+            style={styles.camera}
+            facing="front"
+          />
+
+          {/* Overlay on top of camera */}
+          <View style={styles.cameraOverlay}>
+            {/* Corner brackets */}
+            <View style={[styles.cornerBracket, styles.cTL]} />
+            <View style={[styles.cornerBracket, styles.cTR]} />
+            <View style={[styles.cornerBracket, styles.cBL]} />
+            <View style={[styles.cornerBracket, styles.cBR]} />
+
+            {/* Face oval guide */}
+            <View style={styles.faceOval}>
+              <View style={[styles.ovalDot, { top: 0, left: '50%', marginLeft: -3 }]} />
+              <View style={[styles.ovalDot, { top: '15%', right: 2 }]} />
+              <View style={[styles.ovalDot, { top: '40%', right: -2 }]} />
+              <View style={[styles.ovalDot, { bottom: '25%', left: 4 }]} />
+              <View style={[styles.ovalDot, { bottom: '10%', right: 10 }]} />
+              <View style={[styles.ovalDot, { top: '20%', left: 0 }]} />
+            </View>
+          </View>
+        </View>
+
+        {/* Helper text */}
+        <Text style={styles.helperText}>
+          Find good lighting {'\u2014'} face a window or bright light
+        </Text>
+
+        {/* Status indicators */}
+        <View style={styles.statusRow}>
+          <View style={styles.statusItem}>
+            <View style={styles.statusDotGreen} />
+            <Text style={styles.statusText}>Good lighting</Text>
+          </View>
+          <View style={styles.statusItem}>
+            <View style={styles.statusDotGreen} />
+            <Text style={styles.statusText}>Hair back</Text>
+          </View>
+          <View style={styles.statusItem}>
+            <View style={styles.statusDotGreen} />
+            <Text style={styles.statusText}>Neutral face</Text>
+          </View>
+        </View>
+
+        {/* Camera controls */}
+        <View style={styles.cameraControls}>
+          {/* Redo/reset button */}
+          <TouchableOpacity style={styles.sideButton} onPress={resetScan} activeOpacity={0.7}>
+            <Text style={styles.sideButtonIcon}>{'\u21BB'}</Text>
+          </TouchableOpacity>
+
+          {/* Shutter button — captures from live camera */}
+          <TouchableOpacity style={styles.shutterOuter} onPress={capturePhoto} activeOpacity={0.85}>
+            <View style={styles.shutterInner} />
+          </TouchableOpacity>
+
+          {/* Gallery button — opens camera roll */}
+          <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
+            <View style={styles.gallerySquare} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ─── Analysis Results View ───
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.lg }]}
+      style={styles.resultsScrollContainer}
+      contentContainerStyle={[styles.resultsContent, { paddingTop: insets.top }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Skin Analysis</Text>
-        <Text style={styles.headerSubtitle}>
-          AI-powered skin type and acne analysis
-        </Text>
+      <View style={styles.resultsHeader}>
+        <TouchableOpacity onPress={resetScan} style={styles.backButton}>
+          <Text style={styles.resultsBackArrow}>{'\u2190'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.resultsHeaderTitle}>Your skin analysis</Text>
+        <View style={styles.backButton} />
       </View>
 
-      {/* Camera area */}
-      {!photoUri ? (
-        <View style={styles.cameraArea}>
-          {/* Face guide circle */}
-          <LinearGradient
-            colors={['#FFF0F5', '#FFE0ED']}
-            style={styles.cameraPlaceholder}
-          >
-            <View style={styles.faceGuideOuter}>
-              <View style={styles.faceGuideInner}>
-                <Text style={styles.faceGuideEmoji}>👤</Text>
-              </View>
-              {/* Corner markers */}
-              <View style={[styles.corner, styles.cornerTL]} />
-              <View style={[styles.corner, styles.cornerTR]} />
-              <View style={[styles.corner, styles.cornerBL]} />
-              <View style={[styles.corner, styles.cornerBR]} />
-            </View>
-            <Text style={styles.guideText}>Position your face here</Text>
-          </LinearGradient>
+      {/* Analyzing overlay state */}
+      {analyzing && (
+        <View style={styles.analyzingCard}>
+          <ActivityIndicator size="large" color={Colors.secondary} />
+          <Text style={styles.analyzingTitle}>Analyzing your skin...</Text>
+          <Text style={styles.analyzingSubtext}>
+            Our AI is examining your skin type, acne patterns, and severity
+          </Text>
+        </View>
+      )}
 
-          {/* Instructions */}
-          <View style={styles.instructionsCard}>
-            <Text style={styles.instructionsTitle}>Tips for best results</Text>
-            <View style={styles.instructionsList}>
-              {[
-                { icon: '☀️', text: 'Use natural lighting or face a bright window' },
-                { icon: '😐', text: 'Keep a neutral expression, no makeup' },
-                { icon: '💇', text: 'Pull hair back to expose your full face' },
-                { icon: '📐', text: 'Hold phone at arm\'s length, face centered' },
-              ].map((tip) => (
-                <View key={tip.text} style={styles.instructionItem}>
-                  <Text style={styles.instructionIcon}>{tip.icon}</Text>
-                  <Text style={styles.instructionText}>{tip.text}</Text>
-                </View>
-              ))}
+      {result && !analyzing && (
+        <>
+          {/* Severity badge */}
+          <View style={styles.badgeRow}>
+            <View style={styles.severityBadge}>
+              <Text style={styles.severityBadgeText}>{SEVERITY_LABEL[result.severity]}</Text>
             </View>
           </View>
 
-          {/* Action buttons */}
+          {/* Photo preview */}
+          <View style={styles.photoCard}>
+            <Image source={{ uri: photoUri }} style={styles.resultPhoto} />
+            <Text style={styles.photoHint}>Tap to toggle zones</Text>
+          </View>
+
+          {/* Type chips */}
+          <View style={styles.chipsRow}>
+            <View style={styles.typeChip}>
+              <Text style={styles.typeChipText}>
+                {SKIN_TYPE_CHIP_LABELS[result.skin_type] || result.skin_type}
+              </Text>
+            </View>
+            <View style={styles.typeChip}>
+              <Text style={styles.typeChipText}>
+                {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Severity score section */}
+          <View style={styles.scoreSection}>
+            <Text style={styles.scoreNumber}>{severityScore}</Text>
+            <Text style={styles.scoreSubtitle}>
+              Out of 100 {'\u00B7'} {SEVERITY_RANGE_LABEL[result.severity]}
+            </Text>
+            <View style={styles.scoreBarTrack}>
+              <View style={[styles.scoreBarFill, { width: `${severityScore}%` }]} />
+              <View style={[styles.scoreBarIndicator, { left: `${severityScore}%` }]} />
+            </View>
+          </View>
+
+          {/* Key findings */}
+          <View style={styles.findingsSection}>
+            <Text style={styles.findingsSectionTitle}>
+              {findings.length} KEY FINDINGS FROM YOUR SCAN
+            </Text>
+            {findings.map((finding, index) => (
+              <View key={index} style={styles.findingItem}>
+                <View style={styles.findingHeader}>
+                  <View style={styles.findingBullet} />
+                  <Text style={styles.findingTitle}>{finding.title}</Text>
+                </View>
+                <Text style={styles.findingDescription}>{finding.description}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Motivational text */}
+          <Text style={styles.motivationalText}>
+            Beauty is medicine. This journey is yours {'\u2014'} and every step forward is a step toward the skin you deserve.
+          </Text>
+
+          {/* CTA button */}
           <TouchableOpacity
-            style={styles.takeSelfieButton}
-            onPress={takePhoto}
+            style={[styles.ctaButton, (saving || generatingPlan) && styles.ctaDisabled]}
+            onPress={saveSkinProfile}
+            disabled={saving || generatingPlan}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={[Colors.primary, Colors.primaryDark]}
-              style={styles.takeSelfieGradient}
-            >
-              <Text style={styles.takeSelfieIcon}>📸</Text>
-              <Text style={styles.takeSelfieText}>Take Selfie</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.uploadButton}
-            onPress={pickPhoto}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.uploadText}>Upload from Gallery</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.analysisArea}>
-          {/* Photo preview */}
-          <View style={styles.photoPreviewContainer}>
-            <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-            {analyzing && (
-              <View style={styles.analyzeOverlay}>
-                <LinearGradient
-                  colors={['rgba(232,84,122,0.9)', 'rgba(196,58,96,0.95)']}
-                  style={styles.analyzeOverlayGradient}
-                >
-                  <ActivityIndicator size="large" color={Colors.white} />
-                  <Text style={styles.analyzingTitle}>Analyzing your skin...</Text>
-                  <Text style={styles.analyzingSubtext}>
-                    Claude AI is examining your skin type, acne patterns, and severity
-                  </Text>
-                </LinearGradient>
-              </View>
+            <Text style={styles.ctaButtonText}>
+              {saving ? 'Saving...' : generatingPlan ? 'Generating Plan...' : 'View your personalized plan'}
+            </Text>
+            {!saving && !generatingPlan && (
+              <Text style={styles.ctaPillars}>Products {'\u00B7'} Diet {'\u00B7'} Herbal {'\u00B7'} Lifestyle</Text>
             )}
-          </View>
+          </TouchableOpacity>
 
-          {/* Results */}
-          {result && !analyzing && (
-            <View style={styles.resultsContainer}>
-              <Text style={styles.resultsTitle}>Analysis Complete</Text>
+          {/* Re-scan link */}
+          <TouchableOpacity style={styles.rescanLink} onPress={resetScan}>
+            <Text style={styles.rescanLinkText}>Re-scan</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
-              {/* Skin profile chips */}
-              <View style={styles.chipsRow}>
-                <View style={[styles.resultChip, { backgroundColor: SKIN_TYPE_COLORS[result.skin_type] + '20', borderColor: SKIN_TYPE_COLORS[result.skin_type] }]}>
-                  <Text style={styles.chipLabel}>Skin Type</Text>
-                  <Text style={[styles.chipValue, { color: SKIN_TYPE_COLORS[result.skin_type] }]}>
-                    {result.skin_type.charAt(0).toUpperCase() + result.skin_type.slice(1)}
-                  </Text>
-                </View>
-                <View style={[styles.resultChip, { backgroundColor: Colors.primary + '15', borderColor: Colors.primary }]}>
-                  <Text style={styles.chipLabel}>Acne Type</Text>
-                  <Text style={[styles.chipValue, { color: Colors.primary }]}>
-                    {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.resultChip,
-                  {
-                    backgroundColor: (result.severity === 'mild' ? Colors.severityMild : result.severity === 'moderate' ? Colors.severityModerate : Colors.severitySevere) + '20',
-                    borderColor: result.severity === 'mild' ? Colors.severityMild : result.severity === 'moderate' ? Colors.severityModerate : Colors.severitySevere,
-                  }
-                ]}>
-                  <Text style={styles.chipLabel}>Severity</Text>
-                  <Text style={[
-                    styles.chipValue,
-                    { color: result.severity === 'mild' ? Colors.severityMild : result.severity === 'moderate' ? Colors.severityModerate : Colors.severitySevere }
-                  ]}>
-                    {result.severity.charAt(0).toUpperCase() + result.severity.slice(1)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Acne explanation card */}
-              <View style={styles.explanationCard}>
-                <Text style={styles.explanationEmoji}>
-                  {ACNE_INFO[result.acne_type].emoji}
-                </Text>
-                <View style={styles.explanationBody}>
-                  <Text style={styles.explanationTitle}>
-                    {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)} Acne
-                  </Text>
-                  <Text style={styles.explanationText}>
-                    {ACNE_INFO[result.acne_type].plain}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Quick solutions */}
-              <View style={styles.solutionsCard}>
-                <Text style={styles.solutionsTitle}>Quick wins to start today</Text>
-                {ACNE_INFO[result.acne_type].solutions.map((s, i) => (
-                  <View key={i} style={styles.solutionRow}>
-                    <Text style={styles.solutionBullet}>·</Text>
-                    <Text style={styles.solutionText}>{s}</Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* Action buttons */}
-              <TouchableOpacity
-                style={[styles.generatePlanButton, (saving || generatingPlan) && styles.buttonDisabled]}
-                onPress={saveSkinProfile}
-                disabled={saving || generatingPlan}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={[Colors.secondary, Colors.primary]}
-                  style={styles.generatePlanGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={styles.generatePlanText}>
-                    {saving ? 'Saving...' : generatingPlan ? 'Generating Plan...' : 'Generate My Plan ✨'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.rescanButton} onPress={resetScan}>
-                <Text style={styles.rescanText}>Re-scan</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+      {/* If photo is set but no result yet and not analyzing */}
+      {!result && !analyzing && (
+        <View style={styles.analyzingCard}>
+          <Image source={{ uri: photoUri }} style={styles.resultPhoto} />
         </View>
       )}
     </ScrollView>
   );
 }
 
-// Utility to decode base64 for upload
 function decode(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -425,313 +500,441 @@ function decode(base64: string): Uint8Array {
   return bytes;
 }
 
+const VIEWFINDER_SIZE = SCREEN_WIDTH - 48;
+
 const styles = StyleSheet.create({
-  container: {
+  // ── Dark Camera View ──
+  darkContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#1C1C1A',
   },
-  content: {
-    paddingBottom: 120,
+  darkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
   },
-  header: {
-    paddingHorizontal: Spacing.xxl,
-    marginBottom: Spacing.xl,
-  },
-  headerTitle: {
-    ...Typography.displaySmall,
-    color: Colors.text,
-  },
-  headerSubtitle: {
-    ...Typography.bodyMedium,
-    color: Colors.textMuted,
-    marginTop: Spacing.xs,
-  },
-  cameraArea: {
-    paddingHorizontal: Spacing.xxl,
-    gap: Spacing.xl,
-  },
-  cameraPlaceholder: {
-    borderRadius: BorderRadius.xl,
-    height: 300,
+  backButton: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.lg,
-    borderWidth: 2,
-    borderColor: Colors.subtleDeep,
-    borderStyle: 'dashed',
   },
-  faceGuideOuter: {
-    width: 180,
-    height: 220,
-    borderRadius: 90,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
+  backArrow: {
+    fontSize: 24,
+    color: Colors.white,
+  },
+  darkHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.white,
+    textAlign: 'center',
+  },
+
+  // Live camera
+  cameraWrapper: {
+    marginHorizontal: Spacing.xxl,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    height: VIEWFINDER_SIZE,
     position: 'relative',
   },
-  faceGuideInner: {
-    width: 160,
-    height: 200,
-    borderRadius: 80,
-    backgroundColor: 'rgba(232,84,122,0.08)',
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  faceGuideEmoji: {
-    fontSize: 80,
-    opacity: 0.4,
-  },
-  corner: {
+
+  // Corner brackets
+  cornerBracket: {
     position: 'absolute',
-    width: 20,
-    height: 20,
-    borderColor: Colors.primary,
+    width: 36,
+    height: 36,
+    borderColor: Colors.white,
   },
-  cornerTL: {
-    top: -1,
-    left: -1,
+  cTL: {
+    top: 16,
+    left: 16,
     borderTopWidth: 3,
     borderLeftWidth: 3,
     borderTopLeftRadius: 4,
   },
-  cornerTR: {
-    top: -1,
-    right: -1,
+  cTR: {
+    top: 16,
+    right: 16,
     borderTopWidth: 3,
     borderRightWidth: 3,
     borderTopRightRadius: 4,
   },
-  cornerBL: {
-    bottom: -1,
-    left: -1,
+  cBL: {
+    bottom: 16,
+    left: 16,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
     borderBottomLeftRadius: 4,
   },
-  cornerBR: {
-    bottom: -1,
-    right: -1,
+  cBR: {
+    bottom: 16,
+    right: 16,
     borderBottomWidth: 3,
     borderRightWidth: 3,
     borderBottomRightRadius: 4,
   },
-  guideText: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
+
+  // Face oval
+  faceOval: {
+    width: 180,
+    height: 240,
+    borderRadius: 90,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
+    position: 'relative',
   },
-  instructionsCard: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    ...Shadows.sm,
+  ovalDot: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
-  instructionsTitle: {
-    ...Typography.headlineSmall,
-    color: Colors.text,
-    marginBottom: Spacing.lg,
-  },
-  instructionsList: {
-    gap: Spacing.md,
-  },
-  instructionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  instructionIcon: {
-    fontSize: 20,
-    width: 28,
+
+  // Helper text
+  helperText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xxl,
   },
-  instructionText: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
-    lineHeight: 20,
-  },
-  takeSelfieButton: {
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-    ...Shadows.lg,
-  },
-  takeSelfieGradient: {
-    height: 60,
+
+  // Status indicators
+  statusRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+    gap: Spacing.xl,
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xxl,
+  },
+  statusItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 6,
   },
-  takeSelfieIcon: {
-    fontSize: 24,
+  statusDotGreen: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF87',
   },
-  takeSelfieText: {
-    ...Typography.headlineSmall,
+  statusText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+  },
+
+  // Camera controls
+  cameraControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xxxl,
+    paddingVertical: Spacing.xxxl,
+    paddingBottom: Spacing.massive,
+  },
+  sideButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sideButtonIcon: {
+    fontSize: 22,
     color: Colors.white,
   },
-  uploadButton: {
-    height: 50,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
+  shutterOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 4,
+    borderColor: Colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  shutterInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: Colors.white,
+  },
+  galleryButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  uploadText: {
-    ...Typography.labelLarge,
-    color: Colors.primary,
+  gallerySquare: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
-  analysisArea: {
+
+  // Permission screen
+  permissionButton: {
+    backgroundColor: Colors.primary,
     paddingHorizontal: Spacing.xxl,
-    gap: Spacing.xl,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.md,
   },
-  photoPreviewContainer: {
-    position: 'relative',
-    borderRadius: BorderRadius.xl,
-    overflow: 'hidden',
-    ...Shadows.lg,
+  permissionButtonText: {
+    ...Typography.labelLarge,
+    color: Colors.white,
   },
-  photoPreview: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  analyzeOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  analyzeOverlayGradient: {
+
+  // ── Results View ──
+  resultsScrollContainer: {
     flex: 1,
-    width: '100%',
-    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  resultsContent: {
+    paddingBottom: 120,
+  },
+  resultsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+  },
+  resultsBackArrow: {
+    fontSize: 24,
+    color: Colors.text,
+  },
+  resultsHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    textAlign: 'center',
+  },
+
+  // Analyzing state
+  analyzingCard: {
+    marginHorizontal: Spacing.xxl,
+    marginTop: Spacing.xl,
+    padding: Spacing.xxxl,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
     alignItems: 'center',
     gap: Spacing.lg,
-    padding: Spacing.xxl,
+    ...Shadows.sm,
   },
   analyzingTitle: {
     ...Typography.headlineMedium,
-    color: Colors.white,
+    color: Colors.text,
     textAlign: 'center',
   },
   analyzingSubtext: {
-    ...Typography.bodySmall,
-    color: 'rgba(255,255,255,0.85)',
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },
-  resultsContainer: {
-    gap: Spacing.lg,
-  },
-  resultsTitle: {
-    ...Typography.headlineLarge,
-    color: Colors.text,
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  resultChip: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    padding: Spacing.md,
-    alignItems: 'center',
-    gap: 4,
-  },
-  chipLabel: {
-    ...Typography.caption,
-    color: Colors.textMuted,
-  },
-  chipValue: {
-    ...Typography.labelMedium,
-    fontWeight: '700',
-  },
-  explanationCard: {
-    flexDirection: 'row',
-    backgroundColor: Colors.subtle,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    gap: Spacing.md,
+
+  // Severity badge
+  badgeRow: {
     alignItems: 'flex-start',
+    paddingHorizontal: Spacing.xxl,
+    marginTop: Spacing.lg,
   },
-  explanationEmoji: {
-    fontSize: 36,
-    lineHeight: 44,
+  severityBadge: {
+    backgroundColor: Colors.secondary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.pill,
   },
-  explanationBody: {
-    flex: 1,
-    gap: 6,
+  severityBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: 1,
   },
-  explanationTitle: {
-    ...Typography.labelLarge,
-    color: Colors.primaryDark,
-  },
-  explanationText: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  solutionsCard: {
-    backgroundColor: Colors.white,
+
+  // Photo card
+  photoCard: {
+    marginHorizontal: Spacing.xxl,
+    marginTop: Spacing.lg,
     borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    gap: Spacing.sm,
+    overflow: 'hidden',
+    backgroundColor: Colors.white,
     ...Shadows.sm,
   },
-  solutionsTitle: {
-    ...Typography.labelLarge,
-    color: Colors.text,
-    marginBottom: Spacing.xs,
+  resultPhoto: {
+    width: '100%',
+    aspectRatio: 1,
   },
-  solutionRow: {
+  photoHint: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: Spacing.sm,
+  },
+
+  // Type chips
+  chipsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
-    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.xxl,
+    marginTop: Spacing.lg,
   },
-  solutionBullet: {
-    fontSize: 18,
-    color: Colors.primary,
-    lineHeight: 22,
-    fontWeight: '700',
+  typeChip: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.pill,
   },
-  solutionText: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
-    lineHeight: 22,
-  },
-  generatePlanButton: {
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-    ...Shadows.lg,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  generatePlanGradient: {
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  generatePlanText: {
-    ...Typography.headlineSmall,
+  typeChipText: {
+    fontSize: 13,
+    fontWeight: '600',
     color: Colors.white,
   },
-  rescanButton: {
-    height: 48,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    justifyContent: 'center',
+
+  // Score section
+  scoreSection: {
     alignItems: 'center',
+    paddingHorizontal: Spacing.xxl,
+    marginTop: Spacing.xxxl,
   },
-  rescanText: {
-    ...Typography.labelLarge,
+  scoreNumber: {
+    fontSize: 64,
+    fontWeight: '700',
+    color: Colors.text,
+    lineHeight: 72,
+  },
+  scoreSubtitle: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginTop: Spacing.xs,
+  },
+  scoreBarTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: Colors.borderLight,
+    borderRadius: 3,
+    marginTop: Spacing.lg,
+    position: 'relative',
+  },
+  scoreBarFill: {
+    height: 6,
+    backgroundColor: Colors.secondary,
+    borderRadius: 3,
+  },
+  scoreBarIndicator: {
+    position: 'absolute',
+    top: -5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.secondary,
+    marginLeft: -8,
+    borderWidth: 2,
+    borderColor: Colors.white,
+    ...Shadows.xs,
+  },
+
+  // Findings
+  findingsSection: {
+    paddingHorizontal: Spacing.xxl,
+    marginTop: Spacing.xxxl,
+    gap: Spacing.xl,
+  },
+  findingsSectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  findingItem: {
+    gap: Spacing.sm,
+  },
+  findingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  findingBullet: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.secondary,
+  },
+  findingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  findingDescription: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+    paddingLeft: Spacing.xl,
+  },
+
+  // Motivational
+  motivationalText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: Spacing.xxxl,
+    marginTop: Spacing.xxxl,
+  },
+
+  // CTA
+  ctaButton: {
+    marginHorizontal: Spacing.xxl,
+    marginTop: Spacing.xxl,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+    ...Shadows.md,
+  },
+  ctaDisabled: {
+    opacity: 0.7,
+  },
+  ctaButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  ctaPillars: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 0.5,
+  },
+
+  // Re-scan
+  rescanLink: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    marginTop: Spacing.sm,
+  },
+  rescanLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: Colors.textSecondary,
   },
 });

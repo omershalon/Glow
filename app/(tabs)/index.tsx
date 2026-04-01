@@ -6,14 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Svg, { Circle, G } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
-import type { Database, SkinType, AcneType, Severity, SubscriptionTier } from '@/lib/database.types';
+import type { Database, SkinType, AcneType, Severity } from '@/lib/database.types';
 import { differenceInDays, addDays, format } from 'date-fns';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -37,17 +36,52 @@ const ACNE_TYPE_LABELS: Record<AcneType, string> = {
   inflammatory: 'Inflammatory',
 };
 
-const SEVERITY_COLORS: Record<Severity, string> = {
-  mild: Colors.severityMild,
-  moderate: Colors.severityModerate,
-  severe: Colors.severitySevere,
-};
-
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+}
+
+// Score arc component
+function ScoreArc({ score, size = 140, strokeWidth = 10 }: { score: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = Math.min(Math.max(score / 100, 0), 1);
+  const strokeDashoffset = circumference * (1 - progress);
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
+          {/* Background track */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={Colors.borderLight}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Progress arc */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={Colors.primary}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={`${circumference}`}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+      <View style={{ position: 'absolute', alignItems: 'center' }}>
+        <Text style={styles.scoreNumber}>{score}</Text>
+      </View>
+    </View>
+  );
 }
 
 export default function HomeScreen() {
@@ -59,6 +93,7 @@ export default function HomeScreen() {
   const [lastProgress, setLastProgress] = useState<ProgressPhoto | null>(null);
   const [routineCount, setRoutineCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -100,6 +135,7 @@ export default function HomeScreen() {
       setRoutineCount(count ?? 0);
     }
     if (progressRes.data) setLastProgress(progressRes.data);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -116,12 +152,27 @@ export default function HomeScreen() {
     ? Math.ceil(differenceInDays(new Date(), new Date(skinProfile.created_at)) / 7) || 1
     : null;
 
-  const nextCheckIn = lastProgress
-    ? addDays(new Date(lastProgress.created_at), 7)
+  const hasScore = lastProgress?.severity_score != null;
+  const displayScore = hasScore
+    ? Math.round(100 - lastProgress!.severity_score)
     : null;
-  const daysUntilCheckIn = nextCheckIn
-    ? Math.max(0, differenceInDays(nextCheckIn, new Date()))
+
+  const severityLabel = skinProfile
+    ? `${skinProfile.severity.charAt(0).toUpperCase() + skinProfile.severity.slice(1)} ${ACNE_TYPE_LABELS[skinProfile.acne_type]}`
     : null;
+
+  const skinTypeLabel = skinProfile
+    ? SKIN_TYPE_LABELS[skinProfile.skin_type]
+    : null;
+
+  const firstName = profile?.full_name?.split(' ')[0] || 'Beautiful';
+
+  const pillars = [
+    { icon: '\uD83E\uDDF4', label: 'Products' },
+    { icon: '\uD83E\uDD57', label: 'Diet' },
+    { icon: '\uD83C\uDF3F', label: 'Herbal' },
+    { icon: '\uD83E\uDDD8', label: 'Lifestyle' },
+  ];
 
   return (
     <ScrollView
@@ -137,268 +188,169 @@ export default function HomeScreen() {
       }
     >
       {/* Greeting header */}
-      <LinearGradient
-        colors={['#FFF0F5', '#FFE0ED']}
-        style={styles.headerGradient}
-      >
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.userName}>
-              {profile?.full_name?.split(' ')[0] || 'Beautiful'}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.avatarButton}>
-            <LinearGradient
-              colors={[Colors.secondary, Colors.primary]}
-              style={styles.avatar}
-            >
-              <Text style={styles.avatarText}>
-                {(profile?.full_name || 'G')[0].toUpperCase()}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+      <View style={styles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>
+            {getGreeting()}, {firstName}
+          </Text>
+          <Text style={styles.appTitle}>Glow</Text>
         </View>
-        <Text style={styles.headerSubtext}>
-          {weekNumber
-            ? `Week ${weekNumber} of your journey`
-            : 'Ready to start your skin journey?'}
-        </Text>
-      </LinearGradient>
+        <Text style={styles.leafIcon}>{'\uD83C\uDF3F'}</Text>
+      </View>
 
-      {/* Main content */}
-      <View style={styles.cardsContainer}>
-        {/* Skin profile card OR CTA */}
-        {skinProfile ? (
-          <View style={[styles.card, styles.skinProfileCard]}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Your Skin Profile</Text>
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/scan')}
-                style={styles.rescanButton}
-              >
-                <Text style={styles.rescanText}>Re-scan</Text>
-              </TouchableOpacity>
+      {/* Skin Score Card — only shows with real data */}
+      {skinProfile && (
+        <View style={styles.scoreCard}>
+          <Text style={styles.scoreLabel}>
+            {displayScore != null ? 'Skin score' : 'Your skin profile'}{weekNumber ? ` \u00B7 Week ${weekNumber}` : ''}
+          </Text>
+          {displayScore != null ? (
+            <View style={styles.scoreArcContainer}>
+              <ScoreArc score={displayScore} />
             </View>
-            <View style={styles.skinChipsRow}>
-              <View style={[styles.skinChip, { backgroundColor: Colors.skinOily + '20' }]}>
-                <Text style={styles.skinChipLabel}>Skin Type</Text>
-                <Text style={[styles.skinChipValue, { color: Colors.skinOily }]}>
-                  {SKIN_TYPE_LABELS[skinProfile.skin_type]}
-                </Text>
-              </View>
-              <View style={[styles.skinChip, { backgroundColor: Colors.primary + '15' }]}>
-                <Text style={styles.skinChipLabel}>Acne Type</Text>
-                <Text style={[styles.skinChipValue, { color: Colors.primary }]}>
-                  {ACNE_TYPE_LABELS[skinProfile.acne_type]}
-                </Text>
-              </View>
-              <View style={[styles.skinChip, { backgroundColor: SEVERITY_COLORS[skinProfile.severity] + '20' }]}>
-                <Text style={styles.skinChipLabel}>Severity</Text>
-                <Text style={[styles.skinChipValue, { color: SEVERITY_COLORS[skinProfile.severity] }]}>
-                  {skinProfile.severity.charAt(0).toUpperCase() + skinProfile.severity.slice(1)}
-                </Text>
-              </View>
+          ) : (
+            <View style={styles.noScoreContainer}>
+              <Text style={styles.noScoreText}>Complete a progress check-in to get your score</Text>
             </View>
-            <Text style={styles.analysisNotes} numberOfLines={3}>
-              {skinProfile.analysis_notes}
-            </Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => router.push('/(tabs)/scan')}
-          >
-            <LinearGradient
-              colors={[Colors.primary, Colors.primaryDark]}
-              style={styles.ctaCard}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.ctaEmoji}>📸</Text>
-              <Text style={styles.ctaTitle}>Start Your Skin Scan</Text>
-              <Text style={styles.ctaSubtext}>
-                Take a selfie and get your personalized AI skin analysis in seconds
+          )}
+          <Text style={styles.scoreSkinType}>
+            {severityLabel} {skinTypeLabel ? `\u00B7 ${skinTypeLabel}` : ''}
+          </Text>
+          <View style={styles.badgeRow}>
+            <View style={styles.badgePrimary}>
+              <Text style={styles.badgePrimaryText}>
+                {ACNE_TYPE_LABELS[skinProfile.acne_type]} pattern
               </Text>
-              <View style={styles.ctaButton}>
-                <Text style={styles.ctaButtonText}>Scan Now →</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {/* Plan summary */}
-        {plan ? (
-          <TouchableOpacity
-            style={[styles.card, styles.planCard]}
-            onPress={() => router.push('/(tabs)/plan')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Your 4-Pillar Plan</Text>
-              <Text style={styles.viewAll}>View All →</Text>
             </View>
-            <View style={styles.pillarsGrid}>
-              {[
-                { icon: '🧴', label: 'Products', color: Colors.primary },
-                { icon: '🥗', label: 'Diet', color: Colors.success },
-                { icon: '🌿', label: 'Herbal', color: '#4CAF87' },
-                { icon: '🧘', label: 'Lifestyle', color: Colors.secondary },
-              ].map((pillar) => (
-                <View key={pillar.label} style={styles.pillarItem}>
-                  <View style={[styles.pillarIconBg, { backgroundColor: pillar.color + '15' }]}>
-                    <Text style={styles.pillarIcon}>{pillar.icon}</Text>
-                  </View>
-                  <Text style={styles.pillarLabel}>{pillar.label}</Text>
-                  <Text style={styles.pillarStatus}>Active</Text>
-                </View>
-              ))}
-            </View>
-          </TouchableOpacity>
-        ) : skinProfile ? (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => router.push('/(tabs)/plan')}
-          >
-            <LinearGradient
-              colors={[Colors.secondary, '#E8547A']}
-              style={styles.generatePlanCard}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Text style={styles.generatePlanEmoji}>✨</Text>
-              <Text style={styles.generatePlanTitle}>Generate Your Plan</Text>
-              <Text style={styles.generatePlanSubtext}>
-                Get your personalized 4-pillar skincare plan
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        ) : null}
-
-        {/* Quick action buttons */}
-        {skinProfile && (
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={styles.quickButton}
-              onPress={() => router.push('/(tabs)/progress')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.quickButtonEmoji}>📷</Text>
-              <Text style={styles.quickButtonText}>Log Today's Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.quickButton, styles.quickButtonPrimary]}
-              onPress={() => router.push('/(tabs)/plan')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.quickButtonEmoji}>📋</Text>
-              <Text style={[styles.quickButtonText, styles.quickButtonTextPrimary]}>
-                View Full Plan
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Routine count */}
-        {plan && routineCount > 0 && (
-          <TouchableOpacity
-            style={styles.routineCountCard}
-            onPress={() => router.push('/(tabs)/plan')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.routineCountEmoji}>✅</Text>
-            <Text style={styles.routineCountText}>
-              You have <Text style={styles.routineCountNumber}>{routineCount}</Text>{' '}
-              {routineCount === 1 ? 'item' : 'items'} in your routine
-            </Text>
-            <Text style={styles.routineCountArrow}>→</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Progress check-in card */}
-        {skinProfile && (
-          <TouchableOpacity
-            style={[styles.card, styles.progressCard]}
-            onPress={() => router.push('/(tabs)/progress')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.progressCardHeader}>
-              <View>
-                <Text style={styles.cardTitle}>Weekly Check-in</Text>
-                <Text style={styles.progressSubtext}>
-                  {daysUntilCheckIn === null
-                    ? 'Log your first progress photo'
-                    : daysUntilCheckIn === 0
-                    ? 'Time for your check-in!'
-                    : `Next check-in in ${daysUntilCheckIn} days`}
+            {lastProgress?.improvement_percentage != null && (
+              <View style={styles.badgeSecondary}>
+                <Text style={styles.badgeSecondaryText}>
+                  Improving {lastProgress.improvement_percentage.toFixed(1)}%
                 </Text>
-              </View>
-              <View style={styles.checkInBadge}>
-                <Text style={styles.checkInEmoji}>
-                  {daysUntilCheckIn === 0 ? '🔔' : '📅'}
-                </Text>
-              </View>
-            </View>
-            {lastProgress && (
-              <View style={styles.lastProgressRow}>
-                <Text style={styles.lastProgressLabel}>Last logged: </Text>
-                <Text style={styles.lastProgressDate}>
-                  {format(new Date(lastProgress.created_at), 'MMM d, yyyy')}
-                </Text>
-                {lastProgress.improvement_percentage !== null && (
-                  <Text style={styles.improvementBadge}>
-                    +{lastProgress.improvement_percentage.toFixed(0)}% better
-                  </Text>
-                )}
               </View>
             )}
-          </TouchableOpacity>
-        )}
-
-        {/* Recent insights */}
-        {plan && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Today's Insight</Text>
-            <LinearGradient
-              colors={['#FFF0F5', '#FFE0ED']}
-              style={styles.insightCard}
-            >
-              <Text style={styles.insightEmoji}>💡</Text>
-              <Text style={styles.insightText}>
-                Based on your skin profile, incorporating niacinamide into your morning routine could help regulate sebum production and reduce pore appearance.
-              </Text>
-            </LinearGradient>
           </View>
-        )}
+        </View>
+      )}
 
-        {/* Premium upgrade banner for free users */}
-        {profile?.subscription_tier === 'free' && (
-          <TouchableOpacity activeOpacity={0.9}>
-            <LinearGradient
-              colors={['#1A0A0F', '#3D1A28']}
-              style={styles.premiumBanner}
+      {/* YOUR PLAN section — only when plan exists */}
+      {plan ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>YOUR PLAN</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillarsRow}
+          >
+            {pillars.map((pillar) => (
+              <TouchableOpacity
+                key={pillar.label}
+                style={styles.pillarCard}
+                onPress={() => router.push('/(tabs)/plan')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.pillarIcon}>{pillar.icon}</Text>
+                <Text style={styles.pillarLabel}>{pillar.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      {/* QUICK ACTIONS section */}
+      {skinProfile && (
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>QUICK ACTIONS</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickActionsRow}>
+            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(tabs)/scan')} activeOpacity={0.8}>
+              <Text style={styles.quickActionIcon}>📸</Text>
+              <Text style={styles.quickActionLabel}>New Scan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(tabs)/progress')} activeOpacity={0.8}>
+              <Text style={styles.quickActionIcon}>📊</Text>
+              <Text style={styles.quickActionLabel}>Log Progress</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(tabs)/plan')} activeOpacity={0.8}>
+              <Text style={styles.quickActionIcon}>📋</Text>
+              <Text style={styles.quickActionLabel}>My Plan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(tabs)/scanner')} activeOpacity={0.8}>
+              <Text style={styles.quickActionIcon}>🔍</Text>
+              <Text style={styles.quickActionLabel}>Products</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* YOUR JOURNEY section — show analysis notes if available */}
+      {skinProfile?.analysis_notes && (
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>YOUR ANALYSIS</Text>
+          <View style={styles.analysisCard}>
+            <Text style={styles.analysisText}>{skinProfile.analysis_notes}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Welcome CTA for new users — only after data loaded and truly no profile */}
+      {loaded && !skinProfile && (
+        <View style={styles.welcomeSection}>
+          <View style={styles.welcomeCard}>
+            <View style={styles.welcomeIconRow}>
+              <Text style={styles.welcomeIcon}>🧴</Text>
+              <Text style={styles.welcomeIcon}>🥗</Text>
+              <Text style={styles.welcomeIcon}>🌿</Text>
+              <Text style={styles.welcomeIcon}>🧘</Text>
+            </View>
+            <Text style={styles.welcomeTitle}>Your skin journey{'\n'}starts here</Text>
+            <Text style={styles.welcomeSubtext}>
+              Take a quick selfie and our AI will analyze your skin type, acne patterns, and create a personalized 4-pillar plan just for you.
+            </Text>
+            <TouchableOpacity
+              style={styles.welcomeButton}
+              activeOpacity={0.85}
+              onPress={() => router.push('/(tabs)/scan')}
             >
-              <View style={styles.premiumContent}>
-                <Text style={styles.premiumBadge}>PREMIUM</Text>
-                <Text style={styles.premiumTitle}>Unlock Full Glow</Text>
-                <Text style={styles.premiumFeatures}>
-                  Unlimited scans • Weekly AI coaching • Advanced progress tracking
-                </Text>
-                <View style={styles.premiumPriceRow}>
-                  <Text style={styles.premiumPrice}>$9.99</Text>
-                  <Text style={styles.premiumPeriod}>/month</Text>
+              <Text style={styles.welcomeButtonText}>Scan My Skin</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.welcomeSteps}>
+            {[
+              { num: '1', label: 'Take a selfie', desc: 'Our AI analyzes your skin' },
+              { num: '2', label: 'Get your plan', desc: 'Products, diet, herbal & lifestyle' },
+              { num: '3', label: 'Track progress', desc: 'Weekly check-ins & insights' },
+            ].map((step) => (
+              <View key={step.num} style={styles.welcomeStep}>
+                <View style={styles.welcomeStepNum}>
+                  <Text style={styles.welcomeStepNumText}>{step.num}</Text>
+                </View>
+                <View style={styles.welcomeStepBody}>
+                  <Text style={styles.welcomeStepLabel}>{step.label}</Text>
+                  <Text style={styles.welcomeStepDesc}>{step.desc}</Text>
                 </View>
               </View>
-              <LinearGradient
-                colors={[Colors.secondary, Colors.primary]}
-                style={styles.upgradeButton}
-              >
-                <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
-              </LinearGradient>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-      </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Generate Plan CTA */}
+      {skinProfile && !plan && (
+        <TouchableOpacity
+          style={styles.generatePlanCard}
+          activeOpacity={0.85}
+          onPress={() => router.push('/(tabs)/plan')}
+        >
+          <Text style={styles.generatePlanEmoji}>✨</Text>
+          <Text style={styles.generatePlanTitle}>Generate Your Plan</Text>
+          <Text style={styles.generatePlanSubtext}>
+            Your scan is done — now get your personalized 4-pillar skincare plan
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      <View style={{ height: 100 }} />
     </ScrollView>
   );
 }
@@ -409,15 +361,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    paddingBottom: 100,
+    paddingHorizontal: Spacing.xxl,
   },
-  headerGradient: {
-    marginHorizontal: Spacing.xxl,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    marginBottom: Spacing.lg,
-  },
-  headerRow: {
+
+  // Header
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -425,345 +373,264 @@ const styles = StyleSheet.create({
   },
   greeting: {
     ...Typography.bodyMedium,
-    color: Colors.textSecondary,
-  },
-  userName: {
-    ...Typography.displaySmall,
-    color: Colors.text,
-  },
-  avatarButton: {
-    borderRadius: BorderRadius.circle,
-    ...Shadows.md,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    ...Typography.headlineMedium,
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  headerSubtext: {
-    ...Typography.bodySmall,
     color: Colors.textMuted,
+    marginBottom: Spacing.xxs,
   },
-  cardsContainer: {
-    paddingHorizontal: Spacing.xxl,
-    gap: Spacing.lg,
+  appTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.5,
   },
-  card: {
+  leafIcon: {
+    fontSize: 28,
+    marginTop: Spacing.xs,
+  },
+
+  // Score card
+  scoreCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
-    ...Shadows.md,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginTop: Spacing.lg,
+    ...Shadows.sm,
   },
-  cardTitle: {
-    ...Typography.headlineSmall,
+  scoreLabel: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+    letterSpacing: 0.3,
+    marginBottom: Spacing.md,
+  },
+  scoreArcContainer: {
+    marginVertical: Spacing.md,
+  },
+  scoreNumber: {
+    fontSize: 40,
+    fontWeight: '700',
     color: Colors.text,
   },
-  viewAll: {
-    ...Typography.labelMedium,
-    color: Colors.primary,
-  },
-  skinProfileCard: {},
-  rescanButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.pill,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  rescanText: {
-    ...Typography.labelSmall,
-    color: Colors.primary,
-  },
-  skinChipsRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  skinChip: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
+  noScoreContainer: {
+    paddingVertical: Spacing.xl,
     alignItems: 'center',
   },
-  skinChipLabel: {
-    ...Typography.caption,
+  noScoreText: {
+    ...Typography.bodySmall,
     color: Colors.textMuted,
-    marginBottom: 2,
+    textAlign: 'center',
   },
-  skinChipValue: {
-    ...Typography.labelSmall,
-    fontWeight: '700',
-  },
-  analysisNotes: {
+  scoreSkinType: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-  ctaCard: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xxl,
-    alignItems: 'center',
-    ...Shadows.lg,
-  },
-  ctaEmoji: {
-    fontSize: 48,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  ctaTitle: {
-    ...Typography.headlineLarge,
-    color: Colors.white,
-    textAlign: 'center',
-    marginBottom: Spacing.sm,
-  },
-  ctaSubtext: {
-    ...Typography.bodySmall,
-    color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: Spacing.xl,
-  },
-  ctaButton: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  ctaButtonText: {
-    ...Typography.labelLarge,
-    color: Colors.white,
-  },
-  planCard: {},
-  pillarsGrid: {
+  badgeRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  pillarItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: Spacing.xs,
+  badgePrimary: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.pill,
   },
-  pillarIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
+  badgePrimaryText: {
+    ...Typography.caption,
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  badgeSecondary: {
+    backgroundColor: Colors.secondary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.pill,
+  },
+  badgeSecondaryText: {
+    ...Typography.caption,
+    color: Colors.white,
+    fontWeight: '600',
+  },
+
+  // Section
+  section: {
+    marginTop: Spacing.xxl,
+  },
+  sectionHeader: {
+    ...Typography.labelSmall,
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: Spacing.md,
+  },
+
+  // Pillar cards
+  pillarsRow: {
+    gap: Spacing.sm,
+  },
+  pillarCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
     alignItems: 'center',
+    minWidth: 90,
+    ...Shadows.xs,
   },
   pillarIcon: {
-    fontSize: 22,
+    fontSize: 28,
+    marginBottom: Spacing.sm,
   },
   pillarLabel: {
-    ...Typography.caption,
+    ...Typography.labelSmall,
     color: Colors.text,
     fontWeight: '600',
   },
-  pillarStatus: {
-    ...Typography.caption,
-    color: Colors.success,
-    fontSize: 10,
+
+  // Quick actions
+  quickActionsRow: {
+    gap: Spacing.sm,
   },
-  generatePlanCard: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
+  quickActionCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
     alignItems: 'center',
-    ...Shadows.md,
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  quickActionIcon: {
+    fontSize: 24,
+    marginBottom: Spacing.sm,
+  },
+  quickActionLabel: {
+    ...Typography.labelSmall,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+
+  // Analysis card
+  analysisCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  analysisText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+
+  // Welcome section (no skin profile)
+  welcomeSection: {
+    marginTop: Spacing.lg,
+    gap: Spacing.xl,
+  },
+  welcomeCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.xxl,
+    padding: Spacing.xxl,
+    alignItems: 'center',
+    gap: Spacing.lg,
+  },
+  welcomeIconRow: {
+    flexDirection: 'row',
+    gap: Spacing.lg,
+  },
+  welcomeIcon: {
+    fontSize: 32,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.white,
+    textAlign: 'center',
+    lineHeight: 32,
+  },
+  welcomeSubtext: {
+    ...Typography.bodyMedium,
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  welcomeButton: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.pill,
+    marginTop: Spacing.sm,
+  },
+  welcomeButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+
+  welcomeSteps: {
+    gap: Spacing.md,
+  },
+  welcomeStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  welcomeStepNum: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  welcomeStepNumText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  welcomeStepBody: {
+    flex: 1,
+    gap: 2,
+  },
+  welcomeStepLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  welcomeStepDesc: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+
+  // Generate plan card
+  generatePlanCard: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.xxl,
+    alignItems: 'center',
+    marginTop: Spacing.xl,
+    gap: Spacing.sm,
   },
   generatePlanEmoji: {
     fontSize: 36,
-    marginBottom: Spacing.sm,
   },
   generatePlanTitle: {
     ...Typography.headlineMedium,
     color: Colors.white,
-    marginBottom: Spacing.xs,
   },
   generatePlanSubtext: {
     ...Typography.bodySmall,
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
-  },
-  progressCard: {},
-  progressCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  progressSubtext: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-    marginTop: Spacing.xxs,
-  },
-  checkInBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.subtle,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkInEmoji: {
-    fontSize: 22,
-  },
-  lastProgressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing.md,
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-  },
-  lastProgressLabel: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  lastProgressDate: {
-    ...Typography.bodySmall,
-    color: Colors.text,
-    fontWeight: '600',
-  },
-  improvementBadge: {
-    ...Typography.caption,
-    color: Colors.success,
-    backgroundColor: Colors.successLight,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.pill,
-    fontWeight: '600',
-  },
-  insightCard: {
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginTop: Spacing.md,
-    alignItems: 'flex-start',
-  },
-  insightEmoji: {
-    fontSize: 20,
-    marginTop: 2,
-  },
-  insightText: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
     lineHeight: 20,
-  },
-  premiumBanner: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    gap: Spacing.lg,
-    ...Shadows.lg,
-  },
-  premiumContent: {
-    gap: Spacing.xs,
-  },
-  premiumBadge: {
-    ...Typography.labelSmall,
-    color: Colors.secondary,
-    letterSpacing: 2,
-  },
-  premiumTitle: {
-    ...Typography.displaySmall,
-    color: Colors.white,
-  },
-  premiumFeatures: {
-    ...Typography.bodySmall,
-    color: 'rgba(255,255,255,0.7)',
-    lineHeight: 20,
-  },
-  premiumPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-    marginTop: Spacing.xs,
-  },
-  premiumPrice: {
-    ...Typography.displaySmall,
-    color: Colors.secondary,
-  },
-  premiumPeriod: {
-    ...Typography.bodyMedium,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  upgradeButton: {
-    height: 48,
-    borderRadius: BorderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  upgradeButtonText: {
-    ...Typography.labelLarge,
-    color: Colors.white,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  quickButton: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    alignItems: 'center',
-    gap: Spacing.xs,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    ...Shadows.sm,
-  },
-  quickButtonPrimary: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  quickButtonEmoji: {
-    fontSize: 24,
-  },
-  quickButtonText: {
-    ...Typography.labelSmall,
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  quickButtonTextPrimary: {
-    color: Colors.white,
-  },
-  routineCountCard: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    ...Shadows.sm,
-    borderWidth: 1,
-    borderColor: Colors.successLight,
-  },
-  routineCountEmoji: {
-    fontSize: 20,
-  },
-  routineCountText: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    flex: 1,
-  },
-  routineCountNumber: {
-    fontWeight: '700',
-    color: Colors.success,
-  },
-  routineCountArrow: {
-    ...Typography.bodyMedium,
-    color: Colors.textMuted,
   },
 });

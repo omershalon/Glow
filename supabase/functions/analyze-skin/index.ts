@@ -84,17 +84,27 @@ serve(async (req) => {
               },
               {
                 type: 'text',
-                text: `You are an expert dermatologist AI. Analyze this face photo for skin type and acne characteristics.
+                text: `You are an expert dermatologist AI. Carefully analyze this specific face photo. Look closely at the actual skin in the image — examine pore size, oiliness, dryness, redness, breakout locations, lesion types, and texture.
 
-Return ONLY valid JSON, no markdown:
-{"skin_type":"combination","acne_type":"comedonal","severity":"mild","analysis_notes":"2-3 sentence description.","confidence":0.85}
+Based on what you ACTUALLY SEE in this specific photo, return your analysis.
 
-skin_type options: oily | dry | combination | sensitive | normal
-acne_type options: hormonal | cystic | comedonal | fungal | inflammatory
-severity options: mild | moderate | severe
+IMPORTANT: Every face is different. Do NOT give a generic answer. Look at:
+- WHERE are breakouts located? (jawline = hormonal, forehead = fungal/comedonal, cheeks = inflammatory)
+- WHAT type of lesions? (deep painful bumps = cystic, blackheads/whiteheads = comedonal, red inflamed = inflammatory, uniform small bumps = fungal)
+- HOW oily/dry does the skin appear? (shiny T-zone = combination/oily, flaky = dry, uniform = normal)
+- HOW severe? (few spots = mild, noticeable coverage = moderate, widespread/painful = severe)
+- severity_score: a number 0-100 representing overall skin severity. 0 = perfectly clear, 100 = most severe. Be precise — don't just pick 38/72/91. Use the full range based on what you see (e.g. 24, 57, 63, 81).
 
-If no clear acne is visible, use comedonal / mild.
-Return ONLY the JSON object, nothing else.`,
+Return ONLY valid JSON, no markdown, no extra text:
+{"skin_type":"oily","acne_type":"hormonal","severity":"moderate","severity_score":63,"analysis_notes":"Describe what you specifically see in THIS person's skin in 2-3 sentences.","findings":[{"title":"Finding name","description":"1-2 sentence explanation of what you see"},{"title":"Finding name","description":"1-2 sentence explanation"},{"title":"Finding name","description":"1-2 sentence explanation"}],"confidence":0.85}
+
+skin_type: oily | dry | combination | sensitive | normal
+acne_type: hormonal | cystic | comedonal | fungal | inflammatory
+severity: mild | moderate | severe
+severity_score: integer 0-100 (be specific, use the full range)
+findings: array of exactly 3 objects, each with "title" and "description" — these MUST describe what you actually observe in THIS specific photo, not generic acne info. Example: "Active papules on chin" / "I can see 4-5 raised red papules along the jawline consistent with hormonal breakout pattern."
+
+Return ONLY the JSON object.`,
               },
             ],
           },
@@ -126,13 +136,30 @@ Return ONLY the JSON object, nothing else.`,
       console.log('[analyze-skin] parsed result:', JSON.stringify(analysisResult));
     } catch (parseErr) {
       console.error('[analyze-skin] JSON parse failed:', parseErr, 'raw text:', resultText);
-      analysisResult = {
-        skin_type: 'combination',
-        acne_type: 'comedonal',
-        severity: 'mild',
-        analysis_notes: 'Analysis completed. Please consult a dermatologist for a comprehensive evaluation.',
-        confidence: 0.7,
-      };
+      // Try to extract JSON from within the text (Claude sometimes wraps in extra text)
+      const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          analysisResult = JSON.parse(jsonMatch[0]);
+          console.log('[analyze-skin] recovered JSON from text:', JSON.stringify(analysisResult));
+        } catch {
+          analysisResult = {
+            skin_type: 'combination',
+            acne_type: 'comedonal',
+            severity: 'mild',
+            analysis_notes: 'Could not parse analysis. Please try again with better lighting.',
+            confidence: 0.5,
+          };
+        }
+      } else {
+        analysisResult = {
+          skin_type: 'combination',
+          acne_type: 'comedonal',
+          severity: 'mild',
+          analysis_notes: 'Could not parse analysis. Please try again with better lighting.',
+          confidence: 0.5,
+        };
+      }
     }
 
     console.log('[analyze-skin] success, returning result');

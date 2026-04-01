@@ -52,18 +52,36 @@ serve(async (req) => {
       .limit(1)
       .single();
 
-    const prompt = `You are a dermatologist. Generate 15 ranked skincare recommendations for:
-Skin: ${skin.skin_type} | Acne: ${skin.acne_type} | Severity: ${skin.severity}
-${ob ? `Age: ${ob.age_range} | Duration: ${ob.acne_duration} | Tried: ${ob.tried_products?.join(', ') || 'nothing'} | Allergies: ${ob.known_allergies?.join(', ') || 'none'} | Concerns: ${ob.skin_concerns?.join(', ') || 'acne'}` : ''}
+    const analysisContext = skin.analysis_notes ? `\nAI scan notes: ${skin.analysis_notes}` : '';
 
-Return ONLY this JSON array, no markdown, no explanation:
+    const prompt = `You are a dermatologist creating a UNIQUE personalized plan. Do NOT give generic recommendations.
+
+Patient profile:
+- Skin: ${skin.skin_type} | Acne: ${skin.acne_type} | Severity: ${skin.severity}${analysisContext}
+${ob ? `- Age: ${ob.age_range} | Duration: ${ob.acne_duration}\n- Tried: ${ob.tried_products?.join(', ') || 'nothing'}\n- Allergies: ${ob.known_allergies?.join(', ') || 'none'}\n- Concerns: ${ob.skin_concerns?.join(', ') || 'acne'}` : ''}
+
+Generate 8 recommendations spread across ALL 4 pillars (at least 1 per pillar). Each must be SPECIFIC to this patient's exact profile. If they've tried products before, suggest DIFFERENT ones. Consider their allergies.
+
+CRITICAL FORMAT — titles must be 1-3 words, rationale must be a short subtitle:
+
+GOOD examples:
+{"pillar":"product","title":"Salicylic acid","rationale":"Cleanser · twice daily","impact_rank":1}
+{"pillar":"diet","title":"Cut dairy","rationale":"Swap cow's milk for oat milk","impact_rank":2}
+{"pillar":"herbal","title":"Spearmint tea","rationale":"2 cups daily","impact_rank":3}
+{"pillar":"lifestyle","title":"Clean pillowcase","rationale":"Change every 2 days","impact_rank":4}
+
+BAD examples (TOO LONG — never do this):
+{"title":"Use a salicylic acid cleanser (0.5-2%) twice daily"} ← WAY TOO LONG
+{"rationale":"Beta hydroxy acid penetrates sebaceous follicles..."} ← WAY TOO LONG
+
+Return ONLY a JSON array. No markdown. No explanation. No backticks.
 [
-  {"pillar":"product","title":"Use a salicylic acid cleanser twice daily","rationale":"Unclogs pores and reduces excess oil linked to comedonal acne","impact_rank":1},
-  {"pillar":"diet","title":"...","rationale":"...","impact_rank":2}
+  {"pillar":"product","title":"...","rationale":"...","impact_rank":1},
+  ...8 items total
 ]
 
-pillar must be one of: product, diet, herbal, lifestyle
-Rank 1 = highest clinical impact. Be specific and actionable. Return exactly 8 items.`;
+pillar: product | diet | herbal | lifestyle
+Each pillar MUST have at least 1 item. Return exactly 8.`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -74,7 +92,8 @@ Rank 1 = highest clinical impact. Be specific and actionable. Return exactly 8 i
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 800,
+        max_tokens: 1200,
+        temperature: 0.7,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
