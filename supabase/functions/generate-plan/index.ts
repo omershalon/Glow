@@ -32,6 +32,8 @@ serve(async (req) => {
       });
     }
 
+    // ── Gather ALL available data about this user ──
+
     const { data: skin, error: skinError } = await supabaseClient
       .from('skin_profiles')
       .select('user_id, skin_type, acne_type, severity, analysis_notes')
@@ -44,44 +46,124 @@ serve(async (req) => {
       });
     }
 
-    const { data: ob } = await supabaseClient
-      .from('onboarding_data')
-      .select('age_range, acne_duration, tried_products, known_allergies, skin_concerns')
-      .eq('user_id', skin.user_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // Fetch everything in parallel
+    const [obRes, scansRes, progressRes] = await Promise.all([
+      // Onboarding data
+      supabaseClient
+        .from('onboarding_data')
+        .select('age_range, acne_duration, tried_products, known_allergies, skin_concerns')
+        .eq('user_id', skin.user_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single(),
 
-    const analysisContext = skin.analysis_notes ? `\nAI scan notes: ${skin.analysis_notes}` : '';
+      // Product scan history (what products they've checked)
+      supabaseClient
+        .from('product_scans')
+        .select('product_name, verdict, ingredients')
+        .eq('user_id', skin.user_id)
+        .order('created_at', { ascending: false })
+        .limit(20),
 
-    const prompt = `You are a dermatologist creating a UNIQUE personalized plan. Do NOT give generic recommendations.
+      // Progress photos (skin improvement tracking)
+      supabaseClient
+        .from('progress_photos')
+        .select('severity_score, improvement_percentage, analysis_notes, annotations, created_at')
+        .eq('user_id', skin.user_id)
+        .order('created_at', { ascending: false })
+        .limit(5),
+    ]);
 
-Patient profile:
-- Skin: ${skin.skin_type} | Acne: ${skin.acne_type} | Severity: ${skin.severity}${analysisContext}
-${ob ? `- Age: ${ob.age_range} | Duration: ${ob.acne_duration}\n- Tried: ${ob.tried_products?.join(', ') || 'nothing'}\n- Allergies: ${ob.known_allergies?.join(', ') || 'none'}\n- Concerns: ${ob.skin_concerns?.join(', ') || 'acne'}` : ''}
+    const ob = obRes.data;
+    const scans = scansRes.data || [];
+    const progress = progressRes.data || [];
 
-Generate 8 recommendations spread across ALL 4 pillars (at least 1 per pillar). Each must be SPECIFIC to this patient's exact profile. If they've tried products before, suggest DIFFERENT ones. Consider their allergies.
+    // ── Build rich context sections ──
 
-CRITICAL FORMAT — titles must be 1-3 words, rationale must be a short subtitle:
+    // Skin profile
+    const skinContext = [
+      `Skin type: ${skin.skin_type}`,
+      `Acne type: ${skin.acne_type}`,
+      `Severity: ${skin.severity}`,
+      skin.analysis_notes ? `AI scan analysis: ${skin.analysis_notes}` : '',
+    ].filter(Boolean).join('\n');
 
-GOOD examples:
-{"pillar":"product","title":"Salicylic acid","rationale":"Cleanser · twice daily","impact_rank":1}
-{"pillar":"diet","title":"Cut dairy","rationale":"Swap cow's milk for oat milk","impact_rank":2}
-{"pillar":"herbal","title":"Spearmint tea","rationale":"2 cups daily","impact_rank":3}
-{"pillar":"lifestyle","title":"Clean pillowcase","rationale":"Change every 2 days","impact_rank":4}
+    // Onboarding context
+    const onboardingContext = ob ? [
+      `Age range: ${ob.age_range}`,
+      `Acne duration: ${ob.acne_duration}`,
+      ob.tried_products?.length ? `Products already tried: ${ob.tried_products.join(', ')}` : '',
+      ob.known_allergies?.length ? `Known allergies: ${ob.known_allergies.join(', ')}` : '',
+      ob.skin_concerns?.length ? `Primary concerns: ${ob.skin_concerns.join(', ')}` : '',
+    ].filter(Boolean).join('\n') : '';
 
-BAD examples (TOO LONG — never do this):
-{"title":"Use a salicylic acid cleanser (0.5-2%) twice daily"} ← WAY TOO LONG
-{"rationale":"Beta hydroxy acid penetrates sebaceous follicles..."} ← WAY TOO LONG
+    // Product scan history — what they've scanned and results
+    const scanContext = scans.length > 0
+      ? `Products scanned recently:\n${scans.map(s =>
+          `- ${s.product_name}: ${s.verdict}${s.ingredients?.length ? ` (contains: ${s.ingredients.slice(0, 5).join(', ')})` : ''}`
+        ).join('\n')}`
+      : '';
+
+    // Progress tracking — how their skin has been changing
+    const progressContext = progress.length > 0
+      ? `Skin progress tracking (most recent first):\n${progress.map(p => {
+          const date = new Date(p.created_at).toLocaleDateString();
+          const improvement = p.improvement_percentage != null ? ` | ${p.improvement_percentage}% improvement` : '';
+          const zones = p.annotations ? Object.entries(p.annotations as Record<string, string>)
+            .filter(([_, v]) => v && v !== 'clear')
+            .map(([zone, note]) => `${zone}: ${note}`)
+            .join(', ') : '';
+          return `- ${date}: severity ${p.severity_score}/10${improvement}${zones ? ` | Zones: ${zones}` : ''}${p.analysis_notes ? ` | Notes: ${p.analysis_notes.substring(0, 100)}` : ''}`;
+        }).join('\n')}`
+      : '';
+
+    // Products they found suitable vs unsuitable
+    const suitableProducts = scans.filter(s => s.verdict === 'suitable').map(s => s.product_name);
+    const unsuitableProducts = scans.filter(s => s.verdict === 'unsuitable').map(s => s.product_name);
+    const productInsight = [
+      suitableProducts.length ? `Products that worked for them: ${suitableProducts.join(', ')}` : '',
+      unsuitableProducts.length ? `Products that did NOT work: ${unsuitableProducts.join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+
+    // ── Assemble the full prompt ──
+
+    const prompt = `You are a holistic skin health practitioner who combines ancestral wisdom with evidence-based dermatology. You take a root-cause, whole-body approach to skin health. Your philosophy:
+
+- NATURAL FIRST: Prioritize plant-based, clean, and traditional remedies over synthetic/pharmaceutical products.
+- CLEAN FORMULATIONS: When recommending actives (retinoids, BHA, niacinamide, zinc), suggest them in clean/natural forms — willow bark extract as natural BHA, bakuchiol or rosehip oil as retinol alternatives, food-based zinc. Never recommend CeraVe, Neutrogena, La Roche-Posay, or similar mainstream/corporate brands.
+- ROOT CAUSE: Skin problems reflect internal imbalances — gut health, hormones, inflammation, nutrient deficiencies, toxin load, stress. Address the root cause.
+- ANCESTRAL HEALTH: Draw from Ayurveda (neem, triphala, manjistha, ashwagandha), TCM (gua sha, herbal formulas), and ancestral nutrition (bone broth, fermented foods, wild-caught fish). Grounding, cold exposure, morning sunlight, filtered water.
+
+═══ PATIENT PROFILE ═══
+${skinContext}
+
+${onboardingContext ? `═══ PATIENT HISTORY ═══\n${onboardingContext}\n` : ''}
+${productInsight ? `═══ PRODUCT EXPERIENCE ═══\n${productInsight}\n` : ''}
+${scanContext ? `═══ RECENT PRODUCT SCANS ═══\n${scanContext}\n` : ''}
+${progressContext ? `═══ SKIN PROGRESS OVER TIME ═══\n${progressContext}\n` : ''}
+
+═══ YOUR TASK ═══
+Generate exactly 8 actionable recommendations across ALL 4 pillars (at least 1 per pillar):
+
+PRODUCT picks: Clean/natural skincare only. Recommend specific natural ingredients — tallow balm, rosehip oil (natural vitamin A), willow bark (natural BHA), tea tree oil, bakuchiol, manuka honey, niacinamide in clean formulations, zinc oxide mineral SPF. Favor brands like Santa Cruz Paleo, Cocokind, Herbivore, OSEA, Pai, Badger, Weleda, True Botanicals.
+
+DIET picks: Whole-food nutrition that's approachable but real. Be specific — "bone broth daily" not "eat healthy". Recommend: bone broth (collagen + gut healing), wild-caught salmon (omega-3), avocados, blueberries, fermented foods (kombucha, sauerkraut, kefir, kimchi for gut-skin axis), green tea, walnuts, sweet potatoes, raw manuka honey. Recommend eliminating: dairy, refined sugar, seed oils (canola, soybean, sunflower), processed foods, whey protein. No organ meats — keep it approachable.
+
+HERBAL picks: Traditional herbs with real evidence + specific dosages. Spearmint tea (anti-androgen, 2 cups/day), ashwagandha (cortisol reduction), neem (Ayurvedic purification), triphala (digestive cleanse), manjistha (blood purifying), burdock root (liver + skin), holy basil/tulsi (adaptogen), turmeric + black pepper (anti-inflammatory), dandelion root (liver detox).
+
+LIFESTYLE picks: Natural practices — morning sunlight 10-20 min (circadian reset + vitamin D), grounding/earthing barefoot on grass, cold showers or ice rolling (reduces inflammation), gua sha facial massage (lymphatic drainage), silk/satin pillowcase (less friction), breathwork or meditation (cortisol management), exercise (sweating = detox), clean water (filtered, no fluoride).
+
+CRITICAL FORMAT — titles must be 1-3 words, rationale is a short actionable subtitle:
+{"pillar":"product","title":"Rosehip oil","rationale":"Natural vitamin A alt · nightly","impact_rank":1}
+{"pillar":"diet","title":"Bone broth","rationale":"1 cup daily · collagen + gut healing","impact_rank":2}
+{"pillar":"herbal","title":"Spearmint tea","rationale":"2 cups daily · anti-androgen","impact_rank":3}
+{"pillar":"lifestyle","title":"Morning sunlight","rationale":"15 min · circadian + vitamin D","impact_rank":4}
 
 Return ONLY a JSON array. No markdown. No explanation. No backticks.
-[
-  {"pillar":"product","title":"...","rationale":"...","impact_rank":1},
-  ...8 items total
-]
+[{"pillar":"...","title":"...","rationale":"...","impact_rank":1}, ...8 items]
 
-pillar: product | diet | herbal | lifestyle
-Each pillar MUST have at least 1 item. Return exactly 8.`;
+pillar values: product | diet | herbal | lifestyle
+Exactly 8 items. At least 1 per pillar. impact_rank 1 = highest priority.`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -92,8 +174,8 @@ Each pillar MUST have at least 1 item. Return exactly 8.`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1200,
-        temperature: 0.7,
+        max_tokens: 1500,
+        temperature: 0.9,
         messages: [{ role: 'user', content: prompt }],
       }),
     });

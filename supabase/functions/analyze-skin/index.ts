@@ -95,14 +95,17 @@ IMPORTANT: Every face is different. Do NOT give a generic answer. Look at:
 - HOW severe? (few spots = mild, noticeable coverage = moderate, widespread/painful = severe)
 - severity_score: a number 0-100 representing overall skin severity. 0 = perfectly clear, 100 = most severe. Be precise — don't just pick 38/72/91. Use the full range based on what you see (e.g. 24, 57, 63, 81).
 
+Also analyze each ZONE of the face separately. For each zone, describe what you see (clear, mild, moderate, severe) and any specific observations.
+
 Return ONLY valid JSON, no markdown, no extra text:
-{"skin_type":"oily","acne_type":"hormonal","severity":"moderate","severity_score":63,"analysis_notes":"Describe what you specifically see in THIS person's skin in 2-3 sentences.","findings":[{"title":"Finding name","description":"1-2 sentence explanation of what you see"},{"title":"Finding name","description":"1-2 sentence explanation"},{"title":"Finding name","description":"1-2 sentence explanation"}],"confidence":0.85}
+{"skin_type":"oily","acne_type":"hormonal","severity":"moderate","severity_score":63,"analysis_notes":"2-3 sentences about this specific skin.","findings":[{"title":"Finding","description":"explanation"},{"title":"Finding","description":"explanation"},{"title":"Finding","description":"explanation"}],"zones":{"forehead":{"severity":"mild","note":"A few closed comedones"},"left_cheek":{"severity":"clear","note":"No active lesions"},"right_cheek":{"severity":"moderate","note":"3-4 inflamed papules"},"nose":{"severity":"mild","note":"Some blackheads on sides"},"chin":{"severity":"moderate","note":"Active breakout cluster"},"jawline":{"severity":"severe","note":"Deep cystic lesions"}},"confidence":0.85}
 
 skin_type: oily | dry | combination | sensitive | normal
 acne_type: hormonal | cystic | comedonal | fungal | inflammatory
 severity: mild | moderate | severe
-severity_score: integer 0-100 (be specific, use the full range)
-findings: array of exactly 3 objects, each with "title" and "description" — these MUST describe what you actually observe in THIS specific photo, not generic acne info. Example: "Active papules on chin" / "I can see 4-5 raised red papules along the jawline consistent with hormonal breakout pattern."
+severity_score: integer 0-100
+findings: 3 objects with title + description based on what you SEE
+zones: object with keys forehead, left_cheek, right_cheek, nose, chin, jawline — each has severity (clear/mild/moderate/severe) and a short note about what you observe in that zone
 
 Return ONLY the JSON object.`,
               },

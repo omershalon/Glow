@@ -14,13 +14,73 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
+import Svg, { Path, Circle, Line, Polyline } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
+
+// ─── SVG Icon Components ────────────────────────────────────────────────────
+
+/** Camera icon for empty state */
+const CameraIcon = ({ size = 64, color = Colors.primary }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11z"
+      stroke={color}
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+    <Circle cx={12} cy={13} r={4} stroke={color} strokeWidth={1.5} fill="none" />
+    {/* Flash burst */}
+    <Line x1={19} y1={2} x2={19} y2={4} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    <Line x1={17.5} y1={2.5} x2={18.5} y2={3.5} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    <Line x1={20.5} y1={2.5} x2={19.5} y2={3.5} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+  </Svg>
+);
+
+/** Close (X) icon for modal */
+const CloseIcon = ({ size = 14, color = Colors.textSecondary }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Line x1={18} y1={6} x2={6} y2={18} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+    <Line x1={6} y1={6} x2={18} y2={18} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+  </Svg>
+);
+
+/** Chevron left icon */
+const ChevronLeftIcon = ({ size = 28, color = Colors.primary }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Polyline points="15,18 9,12 15,6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+
+/** Chevron right icon */
+const ChevronRightIcon = ({ size = 28, color = Colors.primary }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Polyline points="9,6 15,12 9,18" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+
+/** Chevron down icon */
+const ChevronDownIcon = ({ size = 28, color = Colors.text }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Polyline points="6,9 12,15 18,9" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+
+/** Down arrow icon for metrics */
+const ArrowDownIcon = ({ size = 14, color = Colors.success }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Line x1={12} y1={5} x2={12} y2={19} stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+    <Polyline points="19,12 12,19 5,12" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
 import { ProgressChart } from '@/components/ProgressChart';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, addMonths, subMonths, differenceInWeeks } from 'date-fns';
 
@@ -38,8 +98,8 @@ type ProgressPhoto = {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CALENDAR_PADDING = Spacing.lg;
-const DAY_CELL = (SCREEN_WIDTH - Spacing.xxl * 2 - CALENDAR_PADDING * 2) / 7;
+// Card inner width = screen - scrollContent padding (xxl*2) - card padding (xl*2)
+const DAY_CELL = Math.floor((SCREEN_WIDTH - Spacing.xxl * 2 - Spacing.xl * 2) / 7);
 
 const ZONE_LABELS: Record<string, string> = {
   forehead: 'Forehead',
@@ -67,6 +127,16 @@ export default function ProgressScreen() {
   const [editingNote, setEditingNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // Fullscreen calendar state
+  const [calendarFullscreen, setCalendarFullscreen] = useState(false);
+
+  // Expand animation state
+  const expandAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(1)).current;
+  const [expandPhoto, setExpandPhoto] = useState<ProgressPhoto | null>(null);
+  const [expandOrigin, setExpandOrigin] = useState({ x: 0, y: 0, size: 0 });
+  const cellRefs = useRef<Record<string, View | null>>({});
 
   const fetchPhotos = useCallback(async () => {
     setLoading(true);
@@ -96,7 +166,7 @@ export default function ProgressScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.4,
+      quality: 0.85,
       base64: true,
     });
 
@@ -167,7 +237,7 @@ export default function ProgressScreen() {
     setPhotos(prev => prev.map((p, i) => i === modalIndex ? { ...p, notes: editingNote } : p));
   };
 
-  // ─── Open modal ───────────────────────────────────────────────────────────
+  // ─── Open modal (from comparison cards etc) ────────────────────────────────
   const openModal = (index: number) => {
     setModalIndex(index);
     setEditingNote(photos[index]?.notes ?? '');
@@ -175,6 +245,38 @@ export default function ProgressScreen() {
     setTimeout(() => {
       flatListRef.current?.scrollToIndex({ index, animated: false });
     }, 50);
+  };
+
+  // ─── Expand from calendar cell ────────────────────────────────────────────
+  const expandFromCell = (dateKey: string, photo: ProgressPhoto) => {
+    const cellView = cellRefs.current[dateKey];
+    if (!cellView) {
+      // fallback to modal
+      const idx = photos.findIndex(p => p.id === photo.id);
+      if (idx >= 0) openModal(idx);
+      return;
+    }
+
+    cellView.measureInWindow((x, y, width, height) => {
+      setExpandOrigin({ x: x + width / 2, y: y + height / 2, size: width });
+      setExpandPhoto(photo);
+      expandAnim.setValue(0);
+      Animated.timing(expandAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
+  const closeExpand = () => {
+    Animated.timing(expandAnim, {
+      toValue: 0,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setExpandPhoto(null);
+    });
   };
 
   // ─── Calendar helpers ─────────────────────────────────────────────────────
@@ -192,6 +294,68 @@ export default function ProgressScreen() {
     acc[key].push(p);
     return acc;
   }, {});
+
+  // ─── Render a month grid ─────────────────────────────────────────────────
+  const renderMonthGrid = (month: Date, cellWidth: number) => {
+    const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) });
+    const pad = Array(getDay(startOfMonth(month))).fill(null);
+
+    return (
+      <View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {WEEKDAYS.map(d => (
+            <View key={d} style={{ width: cellWidth, alignItems: 'center', paddingBottom: Spacing.sm }}>
+              <Text style={styles.dayHeaderText}>{d}</Text>
+            </View>
+          ))}
+          {pad.map((_, i) => <View key={`p-${i}`} style={{ width: cellWidth, height: cellWidth }} />)}
+          {days.map(day => {
+            const key = format(day, 'yyyy-MM-dd');
+            const dayPhotos = photosByDate[key] ?? [];
+            const latestDayPhoto = dayPhotos[0] ?? null;
+            const hasPhotos = dayPhotos.length > 0;
+            const isToday = isSameDay(day, new Date());
+            const circleSize = cellWidth * 0.78;
+
+            return (
+              <TouchableOpacity
+                key={key}
+                style={{ width: cellWidth, height: cellWidth, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }}
+                onPress={() => {
+                  if (!latestDayPhoto) return;
+                  setCalendarFullscreen(false);
+                  setSelectedDay(day);
+                  expandFromCell(key, latestDayPhoto);
+                }}
+                activeOpacity={hasPhotos ? 0.7 : 1}
+              >
+                <View
+                  ref={(ref) => { if (hasPhotos) cellRefs.current[key] = ref; }}
+                  style={[
+                    { width: circleSize, height: circleSize, borderRadius: circleSize / 2, justifyContent: 'center', alignItems: 'center' },
+                    hasPhotos && styles.dayCellLogged,
+                    isToday && !hasPhotos && styles.dayCellToday,
+                    isToday && hasPhotos && styles.dayCellTodayLogged,
+                  ]}
+                >
+                  {hasPhotos && latestDayPhoto?.image_url ? (
+                    <Image source={{ uri: latestDayPhoto.image_url }} style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: circleSize / 2 }} />
+                  ) : null}
+                  <Text style={[
+                    styles.dayCellNumber,
+                    hasPhotos && styles.dayCellNumberLogged,
+                    isToday && !hasPhotos && styles.dayCellNumberToday,
+                  ]}>
+                    {format(day, 'd')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
 
   // ─── Chart + before/after data ────────────────────────────────────────────
   const chartData = [...photos].reverse().map(p => ({
@@ -232,7 +396,7 @@ export default function ProgressScreen() {
         </View>
       ) : photos.length === 0 ? (
         <View style={styles.centered}>
-          <Text style={styles.emptyEmoji}>📸</Text>
+          <CameraIcon size={64} color={Colors.primary} />
           <Text style={styles.emptyTitle}>Start Your Progress Journey</Text>
           <Text style={styles.emptySubtitle}>Log your first photo to begin tracking your skin transformation</Text>
           <TouchableOpacity
@@ -250,11 +414,13 @@ export default function ProgressScreen() {
           <View style={styles.card}>
             <View style={styles.monthNav}>
               <TouchableOpacity onPress={() => setCalendarMonth(m => subMonths(m, 1))} style={styles.monthNavBtn}>
-                <Text style={styles.monthNavArrow}>‹</Text>
+                <ChevronLeftIcon size={28} color={Colors.primary} />
               </TouchableOpacity>
-              <Text style={styles.monthTitle}>{format(calendarMonth, 'MMMM yyyy')}</Text>
+              <TouchableOpacity onPress={() => setCalendarFullscreen(true)} activeOpacity={0.7}>
+                <Text style={styles.monthTitle}>{format(calendarMonth, 'MMMM yyyy')}</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setCalendarMonth(m => addMonths(m, 1))} style={styles.monthNavBtn}>
-                <Text style={styles.monthNavArrow}>›</Text>
+                <ChevronRightIcon size={28} color={Colors.primary} />
               </TouchableOpacity>
             </View>
 
@@ -270,6 +436,7 @@ export default function ProgressScreen() {
               {calendarDays.map(day => {
                 const key = format(day, 'yyyy-MM-dd');
                 const dayPhotos = photosByDate[key] ?? [];
+                const latestDayPhoto = dayPhotos[0] ?? null;
                 const hasPhotos = dayPhotos.length > 0;
                 const isToday = isSameDay(day, new Date());
 
@@ -278,14 +445,14 @@ export default function ProgressScreen() {
                     key={key}
                     style={styles.dayCell}
                     onPress={() => {
-                      if (dayPhotos.length === 0) return;
+                      if (!latestDayPhoto) return;
                       setSelectedDay(day);
-                      const idx = photos.findIndex(p => p.id === dayPhotos[0].id);
-                      if (idx >= 0) openModal(idx);
+                      expandFromCell(key, latestDayPhoto);
                     }}
                     activeOpacity={hasPhotos ? 0.7 : 1}
                   >
                     <View
+                      ref={(ref) => { if (hasPhotos) cellRefs.current[key] = ref; }}
                       style={[
                         styles.dayCellCircle,
                         hasPhotos && styles.dayCellLogged,
@@ -293,6 +460,12 @@ export default function ProgressScreen() {
                         isToday && hasPhotos && styles.dayCellTodayLogged,
                       ]}
                     >
+                      {hasPhotos && latestDayPhoto?.image_url ? (
+                        <Image
+                          source={{ uri: latestDayPhoto.image_url }}
+                          style={styles.dayCellThumb}
+                        />
+                      ) : null}
                       <Text
                         style={[
                           styles.dayCellNumber,
@@ -334,19 +507,29 @@ export default function ProgressScreen() {
               <View style={styles.metricsRow}>
                 <View style={styles.metricCard}>
                   <Text style={styles.metricLabel}>Inflammatory lesions</Text>
-                  <Text style={styles.metricValue}>
-                    {latestPhoto.improvement_percentage != null
-                      ? `↓ ${Math.abs(latestPhoto.improvement_percentage).toFixed(0)}%`
-                      : '—'}
-                  </Text>
+                  {latestPhoto.improvement_percentage != null ? (
+                    <View style={styles.metricValueRow}>
+                      <ArrowDownIcon size={14} color={Colors.success} />
+                      <Text style={styles.metricValue}>
+                        {` ${Math.abs(latestPhoto.improvement_percentage).toFixed(0)}%`}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.metricValue}>--</Text>
+                  )}
                 </View>
                 <View style={styles.metricCard}>
                   <Text style={styles.metricLabel}>Redness score</Text>
-                  <Text style={styles.metricValue}>
-                    {latestPhoto.severity_score != null
-                      ? `↓ ${Math.max(0, Math.round((1 - latestPhoto.severity_score / (firstPhoto?.severity_score || 10)) * 100))}%`
-                      : '—'}
-                  </Text>
+                  {latestPhoto.severity_score != null ? (
+                    <View style={styles.metricValueRow}>
+                      <ArrowDownIcon size={14} color={Colors.success} />
+                      <Text style={styles.metricValue}>
+                        {` ${Math.max(0, Math.round((1 - latestPhoto.severity_score / (firstPhoto?.severity_score || 10)) * 100))}%`}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.metricValue}>--</Text>
+                  )}
                 </View>
               </View>
             </View>
@@ -367,13 +550,159 @@ export default function ProgressScreen() {
         </ScrollView>
       )}
 
+      {/* ── FULLSCREEN CALENDAR ─────────────────────────────────────────── */}
+      <Modal visible={calendarFullscreen} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setCalendarFullscreen(false)}>
+        <View style={[styles.fullCalRoot, { paddingTop: insets.top }]}>
+          <View style={styles.fullCalHeader}>
+            <TouchableOpacity onPress={() => setCalendarFullscreen(false)} style={styles.fullCalBackBtn}>
+              <ChevronLeftIcon size={28} color={Colors.primary} />
+            </TouchableOpacity>
+            <Text style={styles.fullCalTitle}>Progress</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.fullCalScroll}
+            ref={(ref) => {
+              if (ref) setTimeout(() => ref.scrollToEnd({ animated: false }), 50);
+            }}
+          >
+            {(() => {
+              const months: Date[] = [];
+              for (let i = -11; i <= 0; i++) {
+                months.push(addMonths(new Date(), i));
+              }
+              const tileSize = Math.floor((SCREEN_WIDTH - 6) / 7); // minimal gap
+              return months.map(month => {
+                const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) });
+                const pad = Array(getDay(startOfMonth(month))).fill(null);
+                return (
+                  <View key={format(month, 'yyyy-MM')} style={styles.fullCalMonth}>
+                    <Text style={styles.fullCalMonthTitle}>{format(month, 'MMMM yyyy')}</Text>
+                    {/* Weekday headers */}
+                    <View style={{ flexDirection: 'row' }}>
+                      {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => (
+                        <View key={d} style={{ width: tileSize, alignItems: 'center', paddingBottom: 6 }}>
+                          <Text style={styles.fullCalDayHeader}>{d}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {/* Day grid */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                      {pad.map((_, i) => <View key={`p-${i}`} style={{ width: tileSize, height: tileSize }} />)}
+                      {days.map(day => {
+                        const key = format(day, 'yyyy-MM-dd');
+                        const dayPhotos = photosByDate[key] ?? [];
+                        const photo = dayPhotos[0] ?? null;
+                        const hasPhoto = !!photo;
+                        const isToday = isSameDay(day, new Date());
+
+                        return (
+                          <TouchableOpacity
+                            key={key}
+                            style={{ width: tileSize, height: tileSize, padding: 1 }}
+                            activeOpacity={hasPhoto ? 0.7 : 1}
+                            onPress={() => {
+                              if (!photo) return;
+                              slideAnim.setValue(1);
+                              setExpandPhoto(photo);
+                              Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start();
+                            }}
+                          >
+                            {hasPhoto ? (
+                              <View style={styles.fullCalTile}>
+                                <Image source={{ uri: photo.image_url }} style={styles.fullCalTileImage} />
+                                <Text style={styles.fullCalTileDay}>{format(day, 'd')}</Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.fullCalEmptyTile, isToday && styles.fullCalTodayTile]}>
+                                <Text style={[styles.fullCalEmptyDay, isToday && styles.fullCalTodayDay]}>
+                                  {format(day, 'd')}
+                                </Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              });
+            })()}
+          </ScrollView>
+
+          {/* Photo detail slides up from bottom in fullscreen calendar */}
+          <Modal
+            visible={!!expandPhoto}
+            animationType="none"
+            transparent
+            onRequestClose={() => {
+              Animated.timing(slideAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start(() => setExpandPhoto(null));
+            }}
+          >
+            {expandPhoto && (
+              <Animated.View style={[styles.slideUpRoot, {
+                transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 600] }) }],
+              }]}>
+                {/* Close button */}
+                <TouchableOpacity style={styles.slideUpCloseBtn} onPress={() => {
+                  Animated.timing(slideAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start(() => setExpandPhoto(null));
+                }} activeOpacity={0.7}>
+                  <ChevronDownIcon size={28} color={Colors.text} />
+                </TouchableOpacity>
+
+                {/* Swipeable photos */}
+                {/* Swipeable — chronological (oldest first, swipe right = forward) */}
+                <FlatList
+                  data={[...photos].reverse()}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={p => p.id}
+                  initialScrollIndex={Math.max(0, photos.length - 1 - photos.findIndex(p => p.id === expandPhoto.id))}
+                  getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+                  onMomentumScrollEnd={e => {
+                    const reversed = [...photos].reverse();
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                    if (reversed[idx]) setExpandPhoto(reversed[idx]);
+                  }}
+                  renderItem={({ item: photo }) => (
+                    <ScrollView style={{ width: SCREEN_WIDTH }} showsVerticalScrollIndicator={false} bounces={false}>
+                      <Image
+                        source={{ uri: photo.image_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
+                        style={{ width: SCREEN_WIDTH, aspectRatio: 1 }}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.expandInfo}>
+                        <Text style={styles.expandDate}>
+                          {format(new Date(photo.created_at), 'MMMM d, yyyy')}
+                        </Text>
+                        <Text style={styles.expandWeekLabel}>Week {photo.week_number}</Text>
+                        {photo.analysis_notes ? (
+                          <View style={styles.expandSection}>
+                            <Text style={styles.expandSectionTitle}>AI Analysis</Text>
+                            <View style={styles.expandAnalysisBox}>
+                              <Text style={styles.expandAnalysisText}>{photo.analysis_notes}</Text>
+                            </View>
+                          </View>
+                        ) : null}
+                      </View>
+                    </ScrollView>
+                  )}
+                />
+              </Animated.View>
+            )}
+          </Modal>
+        </View>
+      </Modal>
+
       {/* ── DETAIL MODAL ──────────────────────────────────────────────────── */}
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           {/* Modal header */}
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalClose}>
-              <Text style={styles.modalCloseText}>✕</Text>
+              <CloseIcon size={14} color={Colors.textSecondary} />
             </TouchableOpacity>
             <Text style={styles.modalHeaderTitle}>
               {photos[modalIndex] ? format(new Date(photos[modalIndex].created_at), 'MMMM d, yyyy') : ''}
@@ -389,7 +718,7 @@ export default function ProgressScreen() {
                 disabled={modalIndex >= photos.length - 1}
                 style={[styles.modalNavBtn, modalIndex >= photos.length - 1 && styles.modalNavBtnDisabled]}
               >
-                <Text style={styles.modalNavArrow}>‹</Text>
+                <ChevronLeftIcon size={24} color={Colors.primary} />
               </TouchableOpacity>
               <Text style={styles.modalNavCount}>{modalIndex + 1}/{photos.length}</Text>
               <TouchableOpacity
@@ -402,7 +731,7 @@ export default function ProgressScreen() {
                 disabled={modalIndex <= 0}
                 style={[styles.modalNavBtn, modalIndex <= 0 && styles.modalNavBtnDisabled]}
               >
-                <Text style={styles.modalNavArrow}>›</Text>
+                <ChevronRightIcon size={24} color={Colors.primary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -496,6 +825,94 @@ export default function ProgressScreen() {
           />
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── SWIPEABLE PHOTO DETAIL OVERLAY ──────────────────────────────── */}
+      {expandPhoto && (
+        <View style={styles.expandOverlay}>
+          <Animated.View style={[styles.expandBackdrop, { opacity: expandAnim }]}>
+            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeExpand} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.expandCard,
+              {
+                opacity: expandAnim,
+                transform: [
+                  { translateY: expandAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) },
+                ],
+              },
+            ]}
+          >
+            {/* Close button */}
+            <View style={styles.expandHeader}>
+              <Text style={styles.expandCounter}>
+                {photos.findIndex(p => p.id === expandPhoto.id) + 1} / {photos.length}
+              </Text>
+              <TouchableOpacity onPress={closeExpand} style={styles.expandCloseBtn}>
+                <CloseIcon size={16} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Swipeable photos — chronological order (oldest first, swipe right = forward) */}
+            <FlatList
+              data={[...photos].reverse()}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={p => p.id}
+              initialScrollIndex={Math.max(0, photos.length - 1 - photos.findIndex(p => p.id === expandPhoto.id))}
+              getItemLayout={(_, index) => ({ length: SCREEN_WIDTH - Spacing.lg * 2, offset: (SCREEN_WIDTH - Spacing.lg * 2) * index, index })}
+              onMomentumScrollEnd={e => {
+                const reversed = [...photos].reverse();
+                const idx = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - Spacing.lg * 2));
+                if (reversed[idx]) setExpandPhoto(reversed[idx]);
+              }}
+              renderItem={({ item: photo }) => (
+                <ScrollView
+                  style={{ width: SCREEN_WIDTH - Spacing.lg * 2 }}
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
+                >
+                  <Image
+                    source={{ uri: photo.image_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
+                    style={styles.expandImage}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.expandInfo}>
+                    <Text style={styles.expandDate}>
+                      {format(new Date(photo.created_at), 'MMMM d, yyyy')}
+                    </Text>
+                    <Text style={styles.expandWeekLabel}>Week {photo.week_number}</Text>
+                    {photo.analysis_notes ? (
+                      <View style={styles.expandSection}>
+                        <Text style={styles.expandSectionTitle}>AI Analysis</Text>
+                        <View style={styles.expandAnalysisBox}>
+                          <Text style={styles.expandAnalysisText}>{photo.analysis_notes}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+                    {photo.annotations && Object.values(photo.annotations).some(Boolean) && (
+                      <View style={styles.expandSection}>
+                        <Text style={styles.expandSectionTitle}>Zone Breakdown</Text>
+                        {Object.entries(ZONE_LABELS).map(([zoneKey, label]) => {
+                          const val = photo.annotations?.[zoneKey];
+                          if (!val) return null;
+                          return (
+                            <View key={zoneKey} style={styles.zoneRow}>
+                              <Text style={styles.zoneLabel}>{label}</Text>
+                              <Text style={styles.zoneValue}>{val}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+              )}
+            />
+          </Animated.View>
+        </View>
+      )}
     </View>
   );
 }
@@ -536,7 +953,7 @@ const styles = StyleSheet.create({
 
   // Empty / Loading
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xxl, gap: Spacing.lg },
-  emptyEmoji: { fontSize: 64 },
+  emptyIcon: { marginBottom: Spacing.xs },
   emptyTitle: { ...Typography.displaySmall, color: Colors.text, textAlign: 'center' },
   emptySubtitle: { ...Typography.bodyMedium, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
   startButton: {
@@ -567,7 +984,6 @@ const styles = StyleSheet.create({
   // Calendar
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   monthNavBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  monthNavArrow: { fontSize: 28, color: Colors.primary, fontWeight: '300' },
   monthTitle: { ...Typography.headlineMedium, color: Colors.text },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayHeader: { width: DAY_CELL, alignItems: 'center', paddingBottom: Spacing.sm },
@@ -603,9 +1019,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+  dayCellThumb: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: DAY_CELL * 0.39,
+  },
   dayCellNumberLogged: {
     color: Colors.white,
     fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   dayCellNumberToday: {
     color: Colors.white,
@@ -643,6 +1068,7 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
   },
   metricLabel: { ...Typography.caption, color: Colors.textSecondary, marginBottom: Spacing.xs },
+  metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   metricValue: { ...Typography.headlineSmall, color: Colors.success, fontWeight: '700' },
 
   placeholderText: { ...Typography.bodySmall, color: Colors.textMuted },
@@ -672,12 +1098,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalCloseText: { color: Colors.textSecondary, fontWeight: '600' },
   modalHeaderTitle: { ...Typography.labelLarge, color: Colors.text, flex: 1, textAlign: 'center' },
   modalNav: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   modalNavBtn: { padding: 4 },
   modalNavBtnDisabled: { opacity: 0.3 },
-  modalNavArrow: { fontSize: 24, color: Colors.primary },
   modalNavCount: { ...Typography.caption, color: Colors.textMuted, minWidth: 36, textAlign: 'center' },
 
   modalItemContent: { padding: Spacing.xl, gap: Spacing.lg, paddingBottom: 100 },
@@ -724,4 +1148,184 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
   },
   saveNoteBtnText: { ...Typography.labelLarge, color: Colors.white },
+
+  // Slide-up photo detail (fullscreen calendar)
+  slideUpRoot: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: '75%',
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: BorderRadius.xxl,
+    borderTopRightRadius: BorderRadius.xxl,
+    overflow: 'hidden',
+    ...Shadows.xl,
+  },
+  slideUpCloseBtn: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.xl,
+  },
+
+  // Fullscreen calendar
+  fullCalRoot: { flex: 1, backgroundColor: Colors.background },
+  fullCalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  fullCalBackBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  fullCalTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  fullCalScroll: { paddingBottom: 60 },
+  fullCalMonth: { marginTop: Spacing.xl, paddingHorizontal: 3 },
+  fullCalMonthTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: Spacing.sm, paddingHorizontal: Spacing.sm },
+  fullCalDayHeader: { fontSize: 10, fontWeight: '600', color: Colors.textMuted, letterSpacing: 0.5 },
+  fullCalTile: {
+    flex: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  fullCalTileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 4,
+  },
+  fullCalTileDay: {
+    position: 'absolute',
+    bottom: 3,
+    left: 5,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  fullCalEmptyTile: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 3,
+    paddingLeft: 5,
+  },
+  fullCalTodayTile: {},
+  fullCalEmptyDay: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.textMuted,
+  },
+  fullCalTodayDay: {
+    color: Colors.secondary,
+    fontWeight: '800',
+  },
+
+  // Expand overlay
+  expandOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expandBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  expandCard: {
+    width: SCREEN_WIDTH - Spacing.lg * 2,
+    maxHeight: '90%',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.xxl,
+    overflow: 'hidden',
+    ...Shadows.xl,
+  },
+  expandImage: {
+    width: '100%',
+    aspectRatio: 1,
+  },
+  expandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    position: 'absolute',
+    top: Spacing.md,
+    left: Spacing.md,
+    right: Spacing.md,
+    zIndex: 10,
+  },
+  expandCounter: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.white,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.pill,
+  },
+  expandCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expandInfo: {
+    padding: Spacing.xl,
+    gap: Spacing.lg,
+  },
+  expandDate: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  expandWeekLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  expandBadgeRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  expandBadge: {
+    flex: 1,
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    gap: 2,
+  },
+  expandBadgeLabel: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  expandBadgeValue: {
+    ...Typography.headlineSmall,
+    color: Colors.text,
+  },
+  expandSection: {
+    gap: Spacing.sm,
+  },
+  expandSectionTitle: {
+    ...Typography.headlineSmall,
+    color: Colors.text,
+  },
+  expandAnalysisBox: {
+    backgroundColor: Colors.cardSubtle,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+  },
+  expandAnalysisText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  expandNotesText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
 });

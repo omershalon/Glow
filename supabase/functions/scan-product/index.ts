@@ -8,32 +8,32 @@ const corsHeaders = {
 };
 
 const KNOWN_PRODUCTS: Record<string, { name: string; ingredients: string[] }> = {
-  '796030114134': {
-    name: 'CeraVe Moisturizing Cream',
-    ingredients: ['Water', 'Glycerin', 'Cetearyl Alcohol', 'Caprylic/Capric Triglyceride', 'Ceramide NP', 'Ceramide AP', 'Ceramide EOP', 'Cholesterol', 'Sodium Hyaluronate', 'Dimethicone'],
+  '850045076016': {
+    name: 'Santa Cruz Paleo Tallow Balm',
+    ingredients: ['Grass-Fed Beef Tallow', 'Organic Olive Oil', 'Organic Jojoba Oil', 'Lavender Essential Oil'],
   },
-  '381370033244': {
-    name: 'Neutrogena Oil-Free Acne Wash',
-    ingredients: ['Water', 'Salicylic Acid 2%', 'Glycerin', 'Cocamidopropyl Betaine', 'Aloe Barbadensis Leaf Juice'],
+  '858380002166': {
+    name: 'Cocokind Texture Smoothing Cream',
+    ingredients: ['Water', 'Niacinamide', 'Willowbark Extract', 'Oat Kernel Extract', 'Glycerin', 'Squalane', 'Jojoba Esters'],
   },
-  '811701014161': {
-    name: 'The Ordinary Niacinamide 10% + Zinc 1%',
-    ingredients: ['Aqua', 'Niacinamide', 'Pentylene Glycol', 'Zinc PCA', 'Tamarindus Indica Seed Gum', 'Phenoxyethanol'],
+  '818063012065': {
+    name: "Dr. Bronner's Pure Castile Soap Unscented",
+    ingredients: ['Water', 'Organic Coconut Oil', 'Potassium Hydroxide', 'Organic Olive Oil', 'Organic Hemp Seed Oil', 'Organic Jojoba Oil', 'Citric Acid'],
   },
-  '3337872413682': {
-    name: 'La Roche-Posay Effaclar Duo',
-    ingredients: ['Aqua', 'Benzoyl Peroxide 5.5%', 'Glycerin', 'Zinc PCA', 'Niacinamide', 'Lipo Hydroxy Acid'],
+  '850016364012': {
+    name: 'Herbivore Blue Tansy Resurfacing Mask',
+    ingredients: ['White Willow Bark Extract', 'Blue Tansy Oil', 'Fruit Enzymes', 'Aloe Vera Juice', 'Jojoba Oil', 'Glycerin'],
   },
 };
 
 function lookupProduct(barcode: string): { name: string; ingredients: string[] } {
   if (KNOWN_PRODUCTS[barcode]) return KNOWN_PRODUCTS[barcode];
   return {
-    name: `Skincare Product #${barcode.slice(-6)}`,
+    name: `Product #${barcode.slice(-6)}`,
     ingredients: [
-      'Aqua (Water)', 'Glycerin', 'Niacinamide', 'Propylene Glycol',
-      'Sodium Hyaluronate', 'Phenoxyethanol', 'Parfum/Fragrance',
-      'Sodium Lauryl Sulfate', 'Methylparaben', 'Dimethicone',
+      'Aqua (Water)', 'Glycerin', 'Caprylic/Capric Triglyceride',
+      'Cetearyl Alcohol', 'Squalane', 'Tocopherol',
+      'Phenoxyethanol', 'Sodium Hyaluronate', 'Xanthan Gum',
     ],
   };
 }
@@ -108,7 +108,7 @@ ${onboarding?.known_allergies?.length ? `- Known Allergies: ${onboarding.known_a
         messages: [
           {
             role: 'user',
-            content: `You are a dermatologist AI analyzing a skincare product's compatibility with a specific user's skin.
+            content: `You are a holistic skin health analyst who evaluates products through a clean beauty and natural health lens, combined with evidence-based dermatology.
 
 ${skinContext}
 
@@ -116,19 +116,24 @@ Product to analyze:
 Name: ${product.name}
 Ingredients: ${product.ingredients.join(', ')}
 
+ANALYSIS PHILOSOPHY:
+FLAG as concerns: synthetic fragrances/parfum, all parabens (methyl/propyl/butyl), formaldehyde releasers (DMDM hydantoin, imidazolidinyl urea, quaternium-15), SLS/SLES, petroleum derivatives (mineral oil, petrolatum, paraffin), synthetic silicones (dimethicone, cyclomethicone), PEGs, chemical sunscreen filters (oxybenzone, octinoxate), artificial colors (FD&C), propylene glycol, BHT/BHA preservatives, triclosan, ethanolamines (DEA/MEA/TEA).
+
+HIGHLIGHT as beneficial: plant oils (jojoba, rosehip, argan, hemp seed, sea buckthorn, tamanu, squalane), botanical extracts (tea tree, centella, green tea, chamomile, calendula, aloe, witch hazel, willow bark), evidence-based actives (niacinamide, zinc, vitamin C, hyaluronic acid, bakuchiol), traditional ingredients (tallow, shea butter, beeswax, manuka honey, colloidal oatmeal), fermented/probiotic ingredients, ceramides, allantoin, panthenol.
+
 Return ONLY valid JSON, no markdown:
 {
   "product_name": "${product.name}",
   "verdict": "suitable",
-  "reason": "2-3 sentence explanation tailored to their skin profile.",
+  "reason": "2-3 sentence explanation from a natural/holistic perspective, tailored to their skin profile. Mention specific good or bad ingredients.",
   "flagged_ingredients": [],
   "beneficial_ingredients": []
 }
 
 Verdict options:
-- "suitable": ingredients are mostly beneficial or neutral for their skin type
-- "caution": mixed — can use with monitoring
-- "unsuitable": contains ingredients likely to worsen their specific condition
+- "suitable": clean formulation with mostly natural/beneficial ingredients for their skin type
+- "caution": mixed — has some beneficial ingredients but also contains synthetic/concerning ones
+- "unsuitable": heavily synthetic formulation or contains multiple concerning ingredients
 
 Return ONLY valid JSON, no markdown.`,
           },

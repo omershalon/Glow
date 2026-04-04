@@ -8,23 +8,128 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import Svg, { Circle } from 'react-native-svg';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import Svg, { Circle, Path, Rect, Line } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import type { Database, RankedItem, AcneType } from '@/lib/database.types';
+import PickDetailModal from '@/components/PickDetailModal';
 
 type PersonalizedPlan = Database['public']['Tables']['personalized_plans']['Row'];
 type Tab = 'picks' | 'routine';
 
-const PILLAR_ICONS: Record<string, string> = {
-  product:   '🧴',
-  diet:      '🥗',
-  herbal:    '🌿',
-  lifestyle: '🌙',
+type IconComponent = (props: { size?: number; color?: string }) => JSX.Element;
+
+/* ── SVG Icon Components ── */
+function BottleIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x={9} y={2} width={6} height={3} rx={1} stroke={color} strokeWidth={2} fill="none" />
+      <Path
+        d="M8 7h8l1 4v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9l1-4z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+      <Line x1={8} y1={14} x2={16} y2={14} stroke={color} strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
+function SaladIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2} fill="none" />
+      <Path
+        d="M12 7c-1 0-2.5 1.5-2.5 3.5S11 14 12 14s2.5-1.5 2.5-3.5S13 7 12 7z"
+        stroke={color}
+        strokeWidth={1.5}
+        fill="none"
+      />
+      <Line x1={12} y1={7} x2={12} y2={14} stroke={color} strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
+function LeafIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M6 21c0 0 1-8 6-13s11-5 11-5-1 8-6 13-11 5-11 5z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6 21c3-3 6-7 11-11"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function MoonIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function NotepadIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x={5} y={3} width={14} height={18} rx={2} stroke={color} strokeWidth={2} fill="none" />
+      <Line x1={9} y1={8} x2={15} y2={8} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Line x1={9} y1={12} x2={15} y2={12} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Line x1={9} y1={16} x2={13} y2={16} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function ClipboardIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x={5} y={4} width={14} height={17} rx={2} stroke={color} strokeWidth={2} fill="none" />
+      <Rect x={9} y={2} width={6} height={4} rx={1} stroke={color} strokeWidth={1.5} fill="none" />
+      <Line x1={9} y1={10} x2={15} y2={10} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      <Line x1={9} y1={14} x2={15} y2={14} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function StarIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+const PILLAR_ICONS: Record<string, IconComponent> = {
+  product:   BottleIcon,
+  diet:      SaladIcon,
+  herbal:    LeafIcon,
+  lifestyle: MoonIcon,
 };
 
 const PILLAR_LABELS: Record<string, string> = {
@@ -83,18 +188,74 @@ function ProgressRing({ progress, size = 56, strokeWidth = 4 }: { progress: numb
 export default function PlanScreen() {
   const insets = useSafeAreaInsets();
   const router  = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
 
   const [plan,         setPlan]         = useState<PersonalizedPlan | null>(null);
   const [acneType,     setAcneType]     = useState<AcneType | null>(null);
   const [loading,      setLoading]      = useState(true);
   const [generating,   setGenerating]   = useState(false);
-  const [activeTab,    setActiveTab]    = useState<Tab>('picks');
+  const [activeTab,    setActiveTab]    = useState<Tab>('routine');
   const [routineRanks, setRoutineRanks] = useState<Set<number>>(new Set());
+  const cardScaleAnims = useRef<Record<number, Animated.Value>>({}).current;
+
+  // Individual small bubbles per card
+  const BUBBLE_COUNT = 12;
+  const bubbleConfigs = useRef<Record<number, Array<{
+    anim: Animated.Value;
+    x: number; y: number; size: number; delay: number;
+  }>>>({}).current;
+
+  function getBubbles(rank: number) {
+    if (!bubbleConfigs[rank]) {
+      bubbleConfigs[rank] = Array.from({ length: BUBBLE_COUNT }, (_, i) => ({
+        anim: new Animated.Value(0),
+        // Spread from right side (where + button is) toward left
+        x: -(Math.random() * 280 + 20),
+        y: (Math.random() - 0.5) * 80,
+        size: 10 + Math.random() * 24,
+        delay: i * 35 + Math.random() * 40,
+      }));
+    }
+    return bubbleConfigs[rank];
+  }
   const [routineIdMap, setRoutineIdMap] = useState<Record<number, string>>({});
   const [expandedRank, setExpandedRank] = useState<number | null>(null);
+  const [selectedPick, setSelectedPick] = useState<RankedItem | null>(null);
   const [doneToday,    setDoneToday]    = useState<Set<number>>(new Set());
+  const [pillarFilter, setPillarFilter] = useState<string>('all');
 
   const toastAnim  = useRef(new Animated.Value(0)).current;
+
+  // Confetti
+  const CONFETTI_COUNT = 30;
+  const CONFETTI_COLORS = ['#C8573E', '#2D4A3E', '#C8A050', '#4CAF87', '#7CB9E8', '#E8547A'];
+  const confettiAnims = useRef(
+    Array.from({ length: CONFETTI_COUNT }, () => ({
+      anim: new Animated.Value(0),
+      x: Math.random() * Dimensions.get('window').width,
+      drift: (Math.random() - 0.5) * 200,
+      size: 6 + Math.random() * 6,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      rotation: Math.random() * 360,
+    }))
+  ).current;
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  const triggerConfetti = () => {
+    // Randomize positions each time
+    confettiAnims.forEach(c => {
+      c.x = Math.random() * Dimensions.get('window').width;
+      c.drift = (Math.random() - 0.5) * 200;
+      c.color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      c.anim.setValue(0);
+    });
+    setShowConfetti(true);
+    Animated.stagger(20,
+      confettiAnims.map(c =>
+        Animated.timing(c.anim, { toValue: 1, duration: 1200 + Math.random() * 600, useNativeDriver: true })
+      )
+    ).start(() => setShowConfetti(false));
+  };
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── data loading ── */
@@ -145,6 +306,7 @@ export default function PlanScreen() {
   }, []);
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
+  useEffect(() => { if (params.tab === 'picks') setActiveTab('picks'); }, [params.tab]);
 
   /* ── toast ── */
   const showToast = () => {
@@ -183,6 +345,39 @@ export default function PlanScreen() {
         .single();
 
       if (data) {
+        // Trigger bubbles + card bounce
+        if (!cardScaleAnims[item.impact_rank]) cardScaleAnims[item.impact_rank] = new Animated.Value(1);
+        cardScaleAnims[item.impact_rank].setValue(1);
+
+        const bubbles = getBubbles(item.impact_rank);
+        bubbles.forEach((b, i) => {
+          b.anim.setValue(0);
+          b.y = (Math.random() - 0.5) * 70;
+          b.size = 8 + Math.random() * 20;
+          b.delay = i * 80 + Math.random() * 60;
+        });
+
+        Animated.parallel([
+          Animated.sequence([
+            Animated.spring(cardScaleAnims[item.impact_rank], {
+              toValue: 1.03, friction: 3, tension: 200, useNativeDriver: true,
+            }),
+            Animated.spring(cardScaleAnims[item.impact_rank], {
+              toValue: 1, friction: 5, tension: 100, useNativeDriver: true,
+            }),
+          ]),
+          Animated.stagger(70,
+            bubbles.map(b =>
+              Animated.sequence([
+                Animated.delay(b.delay),
+                Animated.timing(b.anim, {
+                  toValue: 1, duration: 1200 + Math.random() * 600, useNativeDriver: true,
+                }),
+              ])
+            )
+          ),
+        ]).start();
+
         setRoutineRanks((p) => new Set([...p, item.impact_rank]));
         setRoutineIdMap((p) => ({ ...p, [item.impact_rank]: data.id as string }));
         showToast();
@@ -192,11 +387,13 @@ export default function PlanScreen() {
 
   /* ── toggle done today ── */
   const toggleDone = (rank: number) => {
+    const wasChecked = doneToday.has(rank);
     setDoneToday((prev) => {
       const s = new Set(prev);
       if (s.has(rank)) s.delete(rank); else s.add(rank);
       return s;
     });
+    if (!wasChecked) triggerConfetti();
   };
 
   /* ── generate ── */
@@ -225,14 +422,16 @@ export default function PlanScreen() {
     }
 
     setGenerating(true);
+    // Clear old data immediately so user sees it's refreshing
+    setPlan(null);
+    setRoutineRanks(new Set());
+    setRoutineIdMap({});
+    setDoneToday(new Set());
     try {
       const { error } = await supabase.functions.invoke('generate-plan', {
         body: { skin_profile_id: skinProfile.id },
       });
       if (error) throw error;
-      setRoutineRanks(new Set());
-      setRoutineIdMap({});
-      setDoneToday(new Set());
       await fetchPlan();
     } catch (err) {
       console.error('generate-plan error:', err);
@@ -261,7 +460,7 @@ export default function PlanScreen() {
     return sorted;
   };
 
-  const groupedPicks = groupByPillar(rankedItems);
+  const groupedTips = groupByPillar(rankedItems);
   const groupedRoutine = groupByPillar(routineItems);
 
   const doneCount = routineItems.filter((i) => doneToday.has(i.impact_rank)).length;
@@ -280,7 +479,9 @@ export default function PlanScreen() {
   if (!plan || rankedItems.length === 0) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={styles.emptyEmoji}>📋</Text>
+        <View style={styles.emptyIconWrap}>
+          <ClipboardIcon size={52} color={Colors.textMuted} />
+        </View>
         <Text style={styles.emptyTitle}>
           {plan ? 'Plan needs refresh' : 'No plan yet'}
         </Text>
@@ -324,15 +525,6 @@ export default function PlanScreen() {
         {/* pill toggle */}
         <View style={styles.pillToggle}>
           <TouchableOpacity
-            style={[styles.pillTab, activeTab === 'picks' && styles.pillTabActive]}
-            onPress={() => setActiveTab('picks')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.pillTabText, activeTab === 'picks' && styles.pillTabTextActive]}>
-              Picks
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.pillTab, activeTab === 'routine' && styles.pillTabActive]}
             onPress={() => setActiveTab('routine')}
             activeOpacity={0.8}
@@ -341,28 +533,73 @@ export default function PlanScreen() {
               My Routine{routineRanks.size > 0 ? ` (${routineRanks.size})` : ''}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pillTab, activeTab === 'picks' && styles.pillTabActive]}
+            onPress={() => setActiveTab('picks')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.pillTabText, activeTab === 'picks' && styles.pillTabTextActive]}>
+              Tips
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       {/* ── PICKS TAB ── */}
       {activeTab === 'picks' ? (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {groupedPicks.map(([pillar, items]) => (
+          {groupedTips
+            .map(([pillar, items]) => (
             <View key={pillar} style={styles.pillarSection}>
               <View style={styles.pillarHeader}>
-                <Text style={styles.pillarIcon}>{PILLAR_ICONS[pillar] ?? '•'}</Text>
+                <View style={styles.pillarIcon}>
+                  {PILLAR_ICONS[pillar]
+                    ? PILLAR_ICONS[pillar]({ size: 16, color: Colors.textMuted })
+                    : <Text style={{ fontSize: 16, color: Colors.textMuted }}>{'•'}</Text>}
+                </View>
                 <Text style={styles.pillarLabel}>{PILLAR_LABELS[pillar] ?? pillar.toUpperCase()}</Text>
               </View>
 
               {items.map((item) => {
                 const added = routineRanks.has(item.impact_rank);
+                const cardScale = cardScaleAnims[item.impact_rank];
+                const bubbles = getBubbles(item.impact_rank);
                 return (
-                  <View key={item.impact_rank}>
+                  <Animated.View
+                    key={item.impact_rank}
+                    style={cardScale ? { transform: [{ scale: cardScale }] } : undefined}
+                  >
                     <TouchableOpacity
-                      style={styles.pickCard}
-                      onPress={() => setExpandedRank(expandedRank === item.impact_rank ? null : item.impact_rank)}
+                      style={[styles.pickCard, { overflow: 'hidden' }, added && { backgroundColor: 'rgba(230, 245, 235, 1)', borderColor: 'rgba(76, 175, 135, 0.3)' }]}
+                      onPress={() => setSelectedPick(item)}
                       activeOpacity={0.7}
                     >
+                      {/* Small bubbles float from + button across and off the card */}
+                      {bubbles.map((b, i) => (
+                        <Animated.View
+                          key={i}
+                          pointerEvents="none"
+                          style={{
+                            position: 'absolute',
+                            right: 26,
+                            top: '50%',
+                            width: b.size,
+                            height: b.size,
+                            borderRadius: b.size / 2,
+                            backgroundColor: i % 3 === 0
+                              ? 'rgba(76, 200, 140, 0.45)'
+                              : i % 3 === 1
+                              ? 'rgba(56, 180, 120, 0.35)'
+                              : 'rgba(100, 220, 160, 0.40)',
+                            transform: [
+                              { translateX: b.anim.interpolate({ inputRange: [0, 0.1, 1], outputRange: [0, -20, -450] }) },
+                              { translateY: b.anim.interpolate({ inputRange: [0, 0.3, 0.6, 1], outputRange: [0, b.y * 0.4, b.y, b.y * 1.3] }) },
+                              { scale: b.anim.interpolate({ inputRange: [0, 0.1, 0.3, 0.8, 1], outputRange: [0, 1.2, 1, 0.8, 0.4] }) },
+                            ],
+                            opacity: b.anim.interpolate({ inputRange: [0, 0.08, 0.2, 0.7, 1], outputRange: [0, 0.8, 0.7, 0.3, 0] }),
+                          }}
+                        />
+                      ))}
                       <View style={styles.pickCardBody}>
                         <Text style={styles.pickTitle}>{item.title}</Text>
                         <Text style={styles.pickSubtitle} numberOfLines={1}>{item.rationale}</Text>
@@ -381,23 +618,7 @@ export default function PlanScreen() {
                         </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
-
-                    {/* expanded detail */}
-                    {expandedRank === item.impact_rank && (
-                      <View style={styles.expandedPanel}>
-                        <Text style={styles.expandedRationale}>{item.rationale}</Text>
-                        <TouchableOpacity
-                          style={[styles.expandedBtn, added && styles.expandedBtnAdded]}
-                          onPress={() => toggleItem(item)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.expandedBtnText, added && styles.expandedBtnTextAdded]}>
-                            {added ? '✓ Remove from Routine' : '+ Add to My Routine'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -414,13 +635,15 @@ export default function PlanScreen() {
 
         /* ── ROUTINE EMPTY ── */
         <View style={styles.centered}>
-          <Text style={styles.emptyEmoji}>📝</Text>
+          <View style={styles.emptyIconWrap}>
+            <NotepadIcon size={52} color={Colors.textMuted} />
+          </View>
           <Text style={styles.emptyTitle}>Nothing added yet</Text>
           <Text style={styles.emptySubtitle}>
-            Go to Picks and tap + on anything you want to start doing
+            Go to Tips and tap + on anything you want to start doing
           </Text>
           <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.addMoreText}>+ Add more from Picks</Text>
+            <Text style={styles.addMoreText}>+ Add more from Tips</Text>
           </TouchableOpacity>
         </View>
 
@@ -441,7 +664,9 @@ export default function PlanScreen() {
           {/* all done banner */}
           {doneCount === totalCount && totalCount > 0 && (
             <View style={styles.allDoneCard}>
-              <Text style={styles.allDoneEmoji}>🎉</Text>
+              <View style={styles.allDoneIconWrap}>
+                <StarIcon size={32} color={Colors.success} />
+              </View>
               <View>
                 <Text style={styles.allDoneTitle}>All done for today!</Text>
                 <Text style={styles.allDoneSubtext}>Consistency is everything — keep it up</Text>
@@ -453,7 +678,11 @@ export default function PlanScreen() {
           {groupedRoutine.map(([pillar, items]) => (
             <View key={pillar} style={styles.pillarSection}>
               <View style={styles.pillarHeader}>
-                <Text style={styles.pillarIcon}>{PILLAR_ICONS[pillar] ?? '•'}</Text>
+                <View style={styles.pillarIcon}>
+                  {PILLAR_ICONS[pillar]
+                    ? PILLAR_ICONS[pillar]({ size: 16, color: Colors.textMuted })
+                    : <Text style={{ fontSize: 16, color: Colors.textMuted }}>{'•'}</Text>}
+                </View>
                 <Text style={styles.pillarLabel}>{PILLAR_LABELS[pillar] ?? pillar.toUpperCase()}</Text>
               </View>
 
@@ -486,7 +715,7 @@ export default function PlanScreen() {
           ))}
 
           <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.addMoreText}>+ Add more from Picks</Text>
+            <Text style={styles.addMoreText}>+ Add more from Tips</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -504,8 +733,42 @@ export default function PlanScreen() {
           },
         ]}
       >
-        <Text style={styles.toastText}>Added to My Routine ✓</Text>
+        <Text style={styles.toastText}>Added to My Routine</Text>
       </Animated.View>
+
+      {/* Confetti */}
+      {showConfetti && (
+        <View style={styles.confettiContainer} pointerEvents="none">
+          {confettiAnims.map((c, i) => (
+            <Animated.View
+              key={i}
+              style={{
+                position: 'absolute',
+                left: c.x,
+                top: -20,
+                width: c.size,
+                height: c.size * 0.6,
+                backgroundColor: c.color,
+                borderRadius: 2,
+                transform: [
+                  { translateY: c.anim.interpolate({ inputRange: [0, 1], outputRange: [0, Dimensions.get('window').height + 50] }) },
+                  { translateX: c.anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, c.drift, c.drift * 1.2] }) },
+                  { rotate: c.anim.interpolate({ inputRange: [0, 1], outputRange: [`${c.rotation}deg`, `${c.rotation + 720}deg`] }) },
+                ],
+                opacity: c.anim.interpolate({ inputRange: [0, 0.8, 1], outputRange: [1, 1, 0] }),
+              }}
+            />
+          ))}
+        </View>
+      )}
+      {/* Pick detail modal */}
+      <PickDetailModal
+        visible={!!selectedPick}
+        pick={selectedPick}
+        onClose={() => setSelectedPick(null)}
+        onToggleRoutine={toggleItem}
+        isInRoutine={selectedPick ? routineRanks.has(selectedPick.impact_rank) : false}
+      />
     </View>
   );
 }
@@ -567,6 +830,35 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   listContent: { paddingBottom: 100 },
 
+  /* filter chips */
+  filterChipRow: { flexGrow: 0 },
+  filterChipContent: {
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+    flexDirection: 'row',
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.pill,
+    borderWidth: 1.5,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.white,
+  },
+  filterChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  filterChipTextActive: {
+    color: Colors.white,
+  },
+
   /* ── pillar sections ── */
   pillarSection: {
     marginHorizontal: Spacing.xl,
@@ -580,7 +872,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
     paddingHorizontal: Spacing.xs,
   },
-  pillarIcon: { fontSize: 16 },
+  pillarIcon: { width: 16, height: 16, alignItems: 'center' as const, justifyContent: 'center' as const },
   pillarLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -782,7 +1074,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.success + '40',
   },
-  allDoneEmoji: { fontSize: 32 },
+  allDoneIconWrap: { width: 32, height: 32, alignItems: 'center' as const, justifyContent: 'center' as const },
   allDoneTitle: { ...Typography.labelLarge, color: Colors.success },
   allDoneSubtext: { ...Typography.bodySmall, color: Colors.textMuted },
 
@@ -803,7 +1095,7 @@ const styles = StyleSheet.create({
   regenText: { ...Typography.bodySmall, color: Colors.textMuted },
 
   /* ── empty state ── */
-  emptyEmoji: { fontSize: 52 },
+  emptyIconWrap: { width: 52, height: 52, alignItems: 'center' as const, justifyContent: 'center' as const, marginBottom: Spacing.sm },
   emptyTitle: { ...Typography.headlineLarge, color: Colors.text, textAlign: 'center' },
   emptySubtitle: { ...Typography.bodyMedium, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
 
@@ -824,4 +1116,9 @@ const styles = StyleSheet.create({
     ...Shadows.lg,
   },
   toastText: { ...Typography.labelMedium, color: Colors.white },
+
+  confettiContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+  },
 });

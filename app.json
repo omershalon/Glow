@@ -22,7 +22,10 @@
         "backgroundColor": "#FFF0F5"
       },
       "package": "com.glow.skincare",
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -37,7 +40,8 @@
         {
           "photosPermission": "Allow Glow to analyze your skin photos"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "scheme": "glow"
   }

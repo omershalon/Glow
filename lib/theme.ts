@@ -44,20 +44,28 @@ export const Colors = {
   verdictUnsuitable: '#C84040',
 };
 
+export const Fonts = {
+  regular: 'NunitoSans-Regular',
+  medium: 'NunitoSans-Medium',
+  semibold: 'NunitoSans-SemiBold',
+  bold: 'NunitoSans-Bold',
+  extrabold: 'NunitoSans-ExtraBold',
+};
+
 export const Typography = {
-  displayLarge: { fontSize: 36, fontWeight: '700' as const, lineHeight: 44, letterSpacing: -0.5 },
-  displayMedium: { fontSize: 28, fontWeight: '700' as const, lineHeight: 36, letterSpacing: -0.3 },
-  displaySmall: { fontSize: 24, fontWeight: '600' as const, lineHeight: 32, letterSpacing: -0.2 },
-  headlineLarge: { fontSize: 20, fontWeight: '600' as const, lineHeight: 28 },
-  headlineMedium: { fontSize: 18, fontWeight: '600' as const, lineHeight: 24 },
-  headlineSmall: { fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
-  bodyLarge: { fontSize: 16, fontWeight: '400' as const, lineHeight: 24 },
-  bodyMedium: { fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
-  bodySmall: { fontSize: 12, fontWeight: '400' as const, lineHeight: 18 },
-  labelLarge: { fontSize: 14, fontWeight: '600' as const, lineHeight: 20, letterSpacing: 0.1 },
-  labelMedium: { fontSize: 12, fontWeight: '600' as const, lineHeight: 16, letterSpacing: 0.5 },
-  labelSmall: { fontSize: 11, fontWeight: '500' as const, lineHeight: 14, letterSpacing: 0.5 },
-  caption: { fontSize: 11, fontWeight: '400' as const, lineHeight: 16, letterSpacing: 0.3 },
+  displayLarge: { fontFamily: Fonts.bold, fontSize: 36, lineHeight: 44, letterSpacing: -0.5 },
+  displayMedium: { fontFamily: Fonts.bold, fontSize: 28, lineHeight: 36, letterSpacing: -0.3 },
+  displaySmall: { fontFamily: Fonts.semibold, fontSize: 24, lineHeight: 32, letterSpacing: -0.2 },
+  headlineLarge: { fontFamily: Fonts.semibold, fontSize: 20, lineHeight: 28 },
+  headlineMedium: { fontFamily: Fonts.semibold, fontSize: 18, lineHeight: 24 },
+  headlineSmall: { fontFamily: Fonts.semibold, fontSize: 16, lineHeight: 22 },
+  bodyLarge: { fontFamily: Fonts.regular, fontSize: 16, lineHeight: 24 },
+  bodyMedium: { fontFamily: Fonts.regular, fontSize: 14, lineHeight: 20 },
+  bodySmall: { fontFamily: Fonts.regular, fontSize: 12, lineHeight: 18 },
+  labelLarge: { fontFamily: Fonts.semibold, fontSize: 14, lineHeight: 20, letterSpacing: 0.1 },
+  labelMedium: { fontFamily: Fonts.semibold, fontSize: 12, lineHeight: 16, letterSpacing: 0.5 },
+  labelSmall: { fontFamily: Fonts.medium, fontSize: 11, lineHeight: 14, letterSpacing: 0.5 },
+  caption: { fontFamily: Fonts.regular, fontSize: 11, lineHeight: 16, letterSpacing: 0.3 },
 };
 
 export const BorderRadius = {

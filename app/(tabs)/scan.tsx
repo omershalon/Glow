@@ -9,8 +9,11 @@ import {
   ActivityIndicator,
   Image,
   Dimensions,
+  Linking,
+  FlatList,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import Svg, { Path, Circle, Rect, Line, Polyline } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
@@ -19,12 +22,20 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import type { SkinType, AcneType, Severity } from '@/lib/database.types';
+import { PRODUCTS } from '@/lib/products';
+import { cleanProductName } from '@/lib/clean-product-name';
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface Finding {
   title: string;
   description: string;
+}
+
+interface ZoneData {
+  severity: 'clear' | 'mild' | 'moderate' | 'severe';
+  note: string;
 }
 
 interface AnalysisResult {
@@ -34,6 +45,7 @@ interface AnalysisResult {
   severity_score?: number;
   analysis_notes: string;
   findings?: Finding[];
+  zones?: Record<string, ZoneData>;
   confidence: number;
 }
 
@@ -58,6 +70,75 @@ const SKIN_TYPE_CHIP_LABELS: Record<SkinType, string> = {
   normal: 'Balanced/Normal',
 };
 
+// Zone positions on a centered selfie (percentage of photo dimensions)
+const ZONE_POSITIONS: Record<string, { label: string; top: number; left: number }> = {
+  forehead:    { label: 'Forehead', top: 0.22, left: 0.50 },
+  left_cheek:  { label: 'L Cheek',  top: 0.50, left: 0.24 },
+  right_cheek: { label: 'R Cheek',  top: 0.50, left: 0.76 },
+  nose:        { label: 'Nose',     top: 0.45, left: 0.50 },
+  chin:        { label: 'Chin',     top: 0.73, left: 0.50 },
+  jawline:     { label: 'Jawline',  top: 0.65, left: 0.30 },
+};
+
+const ZONE_SEVERITY_COLORS: Record<string, string> = {
+  clear: '#4CAF87',
+  mild: '#C8A050',
+  moderate: '#C8573E',
+  severe: '#C84040',
+};
+
+// ─── SVG Icon Components ───
+
+function CameraIcon({ size = 48, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11z"
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx={12} cy={13} r={4} stroke={color} strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
+function BackArrowIcon({ size = 24, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19 12H5M5 12l7-7M5 12l7 7"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function RedoIcon({ size = 22, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M1 4v6h6"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -66,8 +147,10 @@ export default function ScanScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [showZones, setShowZones] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [loggingProgress, setLoggingProgress] = useState(false);
 
   const capturePhoto = async () => {
     if (!cameraRef.current) return;
@@ -135,58 +218,59 @@ export default function ScanScreen() {
     }
   };
 
+  const [profileSaved, setProfileSaved] = useState(false);
+
   const saveSkinProfile = async () => {
     if (!result || !photoUri) return;
 
-    setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    try {
-      const base64 = await FileSystem.readAsStringAsync(photoUri, {
-        encoding: 'base64' as any,
-      });
-      const fileName = `${user.id}/skin-scan-${Date.now()}.jpg`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('skin-photos')
-        .upload(fileName, decode(base64), {
-          contentType: 'image/jpeg',
-          upsert: false,
+    // Only save the skin profile once per scan — don't duplicate on re-taps
+    if (!profileSaved) {
+      setSaving(true);
+      try {
+        const base64 = await FileSystem.readAsStringAsync(photoUri, {
+          encoding: 'base64' as any,
+        });
+        const fileName = `${user.id}/skin-scan-${Date.now()}.jpg`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('skin-photos')
+          .upload(fileName, decode(base64), {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
+
+        let photoUrl = null;
+        if (!uploadError && uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('skin-photos')
+            .getPublicUrl(fileName);
+          photoUrl = publicUrl;
+        }
+
+        const { error: insertError } = await supabase.from('skin_profiles').insert({
+          user_id: user.id,
+          skin_type: result.skin_type,
+          acne_type: result.acne_type,
+          severity: result.severity,
+          analysis_notes: result.analysis_notes,
+          photo_url: photoUrl,
         });
 
-      let photoUrl = null;
-      if (!uploadError && uploadData) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('skin-photos')
-          .getPublicUrl(fileName);
-        photoUrl = publicUrl;
+        if (insertError) throw insertError;
+        setProfileSaved(true);
+        setSaving(false);
+      } catch (err) {
+        setSaving(false);
+        console.error('Save error:', err);
+        Alert.alert('Save failed', 'Could not save your skin profile. Please try again.');
+        return;
       }
-
-      const { error: insertError } = await supabase.from('skin_profiles').insert({
-        user_id: user.id,
-        skin_type: result.skin_type,
-        acne_type: result.acne_type,
-        severity: result.severity,
-        analysis_notes: result.analysis_notes,
-        photo_url: photoUrl,
-      });
-
-      if (insertError) throw insertError;
-
-      setSaving(false);
-      Alert.alert(
-        'Profile saved!',
-        'Your skin profile has been saved. Would you like to generate your personalized plan now?',
-        [
-          { text: 'Later', style: 'cancel' },
-          { text: 'Generate Plan', onPress: () => generatePlan(user.id) },
-        ]
-      );
-    } catch (err) {
-      setSaving(false);
-      console.error('Save error:', err);
-      Alert.alert('Save failed', 'Could not save your skin profile. Please try again.');
     }
+
+    // Always generate a fresh plan (even on re-taps)
+    await generatePlan(user.id);
   };
 
   const generatePlan = async (userId: string) => {
@@ -207,10 +291,58 @@ export default function ScanScreen() {
       }
 
       setGeneratingPlan(false);
-      router.push('/(tabs)/plan');
+      router.push('/(tabs)/plan?tab=picks');
     } catch (err) {
       setGeneratingPlan(false);
       console.error('Plan generation error:', err);
+    }
+  };
+
+  const logToProgress = async () => {
+    if (!photoUri || loggingProgress) return;
+    setLoggingProgress(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      const base64 = await FileSystem.readAsStringAsync(photoUri, { encoding: 'base64' as any });
+
+      // Upload photo
+      let imageUrl = photoUri;
+      try {
+        const fileName = `${user.id}/progress-${Date.now()}.jpg`;
+        const { data: uploadData } = await supabase.storage
+          .from('progress-photos')
+          .upload(fileName, decode(base64), { contentType: 'image/jpeg' });
+        if (uploadData) {
+          const { data: { publicUrl } } = supabase.storage.from('progress-photos').getPublicUrl(fileName);
+          imageUrl = publicUrl;
+        }
+      } catch {}
+
+      // Get severity score from result
+      const score = result?.severity_score ?? (result?.severity === 'mild' ? 3 : result?.severity === 'moderate' ? 6 : 8);
+
+      await supabase.from('progress_photos').insert({
+        user_id: user.id,
+        image_url: imageUrl,
+        week_number: 1,
+        severity_score: Math.round(score),
+        analysis_notes: result?.analysis_notes ?? '',
+        notes: '',
+      } as any);
+
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved!', 'Photo logged to your progress timeline.', [
+        { text: 'View Progress', onPress: () => router.push('/(tabs)/progress') },
+        { text: 'OK' },
+      ]);
+    } catch (err) {
+      console.error('Log progress error:', err);
+      Alert.alert('Error', 'Could not save to progress. Please try again.');
+    } finally {
+      setLoggingProgress(false);
     }
   };
 
@@ -271,7 +403,7 @@ export default function ScanScreen() {
     if (!permission.granted) {
       return (
         <View style={[styles.darkContainer, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center', gap: Spacing.lg, paddingHorizontal: Spacing.xxl }]}>
-          <Text style={{ fontSize: 48 }}>📸</Text>
+          <CameraIcon size={48} color={Colors.white} />
           <Text style={{ ...Typography.headlineMedium, color: Colors.white, textAlign: 'center' }}>
             Camera Access Needed
           </Text>
@@ -290,81 +422,46 @@ export default function ScanScreen() {
     }
 
     return (
-      <View style={[styles.darkContainer, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={styles.darkHeader}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        {/* Fullscreen camera */}
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFillObject}
+          facing="front"
+        />
+
+        {/* Overlay on top of fullscreen camera */}
+        <View style={[StyleSheet.absoluteFillObject, { justifyContent: 'center', alignItems: 'center' }]}>
+          {/* Corner brackets */}
+          <View style={[styles.cornerBracket, styles.cTL]} />
+          <View style={[styles.cornerBracket, styles.cTR]} />
+          <View style={[styles.cornerBracket, styles.cBL]} />
+          <View style={[styles.cornerBracket, styles.cBR]} />
+        </View>
+
+        {/* Header — on top of camera */}
+        <View style={[styles.darkHeader, { position: 'absolute', top: insets.top, left: 0, right: 0, zIndex: 10 }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backArrow}>{'\u2190'}</Text>
+            <BackArrowIcon size={24} color={Colors.white} />
           </TouchableOpacity>
           <Text style={styles.darkHeaderTitle}>Skin Scan</Text>
           <View style={styles.backButton} />
         </View>
 
-        {/* Live Camera with overlay */}
-        <View style={styles.cameraWrapper}>
-          <CameraView
-            ref={cameraRef}
-            style={styles.camera}
-            facing="front"
-          />
-
-          {/* Overlay on top of camera */}
-          <View style={styles.cameraOverlay}>
-            {/* Corner brackets */}
-            <View style={[styles.cornerBracket, styles.cTL]} />
-            <View style={[styles.cornerBracket, styles.cTR]} />
-            <View style={[styles.cornerBracket, styles.cBL]} />
-            <View style={[styles.cornerBracket, styles.cBR]} />
-
-            {/* Face oval guide */}
-            <View style={styles.faceOval}>
-              <View style={[styles.ovalDot, { top: 0, left: '50%', marginLeft: -3 }]} />
-              <View style={[styles.ovalDot, { top: '15%', right: 2 }]} />
-              <View style={[styles.ovalDot, { top: '40%', right: -2 }]} />
-              <View style={[styles.ovalDot, { bottom: '25%', left: 4 }]} />
-              <View style={[styles.ovalDot, { bottom: '10%', right: 10 }]} />
-              <View style={[styles.ovalDot, { top: '20%', left: 0 }]} />
-            </View>
+        {/* Bottom controls — on top of camera */}
+        <View style={{ position: 'absolute', bottom: -40, left: 0, right: 0, paddingBottom: insets.bottom + 10, zIndex: 10 }}>
+          {/* Camera controls */}
+          <View style={styles.cameraControls}>
+            <TouchableOpacity style={styles.sideButton} onPress={resetScan} activeOpacity={0.7}>
+              <RedoIcon size={22} color={Colors.white} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.shutterOuter} onPress={capturePhoto} activeOpacity={0.85}>
+              <View style={styles.shutterInner} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
+              <View style={styles.gallerySquare} />
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Helper text */}
-        <Text style={styles.helperText}>
-          Find good lighting {'\u2014'} face a window or bright light
-        </Text>
-
-        {/* Status indicators */}
-        <View style={styles.statusRow}>
-          <View style={styles.statusItem}>
-            <View style={styles.statusDotGreen} />
-            <Text style={styles.statusText}>Good lighting</Text>
-          </View>
-          <View style={styles.statusItem}>
-            <View style={styles.statusDotGreen} />
-            <Text style={styles.statusText}>Hair back</Text>
-          </View>
-          <View style={styles.statusItem}>
-            <View style={styles.statusDotGreen} />
-            <Text style={styles.statusText}>Neutral face</Text>
-          </View>
-        </View>
-
-        {/* Camera controls */}
-        <View style={styles.cameraControls}>
-          {/* Redo/reset button */}
-          <TouchableOpacity style={styles.sideButton} onPress={resetScan} activeOpacity={0.7}>
-            <Text style={styles.sideButtonIcon}>{'\u21BB'}</Text>
-          </TouchableOpacity>
-
-          {/* Shutter button — captures from live camera */}
-          <TouchableOpacity style={styles.shutterOuter} onPress={capturePhoto} activeOpacity={0.85}>
-            <View style={styles.shutterInner} />
-          </TouchableOpacity>
-
-          {/* Gallery button — opens camera roll */}
-          <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
-            <View style={styles.gallerySquare} />
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -380,7 +477,7 @@ export default function ScanScreen() {
       {/* Header */}
       <View style={styles.resultsHeader}>
         <TouchableOpacity onPress={resetScan} style={styles.backButton}>
-          <Text style={styles.resultsBackArrow}>{'\u2190'}</Text>
+          <BackArrowIcon size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.resultsHeaderTitle}>Your skin analysis</Text>
         <View style={styles.backButton} />
@@ -399,20 +496,19 @@ export default function ScanScreen() {
 
       {result && !analyzing && (
         <>
-          {/* Severity badge */}
+          {/* Severity at top */}
           <View style={styles.badgeRow}>
             <View style={styles.severityBadge}>
               <Text style={styles.severityBadgeText}>{SEVERITY_LABEL[result.severity]}</Text>
             </View>
           </View>
 
-          {/* Photo preview */}
-          <View style={styles.photoCard}>
-            <Image source={{ uri: photoUri }} style={styles.resultPhoto} />
-            <Text style={styles.photoHint}>Tap to toggle zones</Text>
+          {/* ═══ Photo Card ═══ */}
+          <View style={styles.photoCardWrapper}>
+            <Image source={{ uri: photoUri }} style={styles.scanPhoto} />
           </View>
 
-          {/* Type chips */}
+          {/* ═══ Chips row ═══ */}
           <View style={styles.chipsRow}>
             <View style={styles.typeChip}>
               <Text style={styles.typeChipText}>
@@ -421,43 +517,70 @@ export default function ScanScreen() {
             </View>
             <View style={styles.typeChip}>
               <Text style={styles.typeChipText}>
-                {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)}
+                {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)} Acne
               </Text>
             </View>
-          </View>
-
-          {/* Severity score section */}
-          <View style={styles.scoreSection}>
-            <Text style={styles.scoreNumber}>{severityScore}</Text>
-            <Text style={styles.scoreSubtitle}>
-              Out of 100 {'\u00B7'} {SEVERITY_RANGE_LABEL[result.severity]}
-            </Text>
-            <View style={styles.scoreBarTrack}>
-              <View style={[styles.scoreBarFill, { width: `${severityScore}%` }]} />
-              <View style={[styles.scoreBarIndicator, { left: `${severityScore}%` }]} />
+            <View style={styles.issuesBadge}>
+              <Text style={styles.issuesBadgeText}>{findings.length} issues found</Text>
             </View>
           </View>
 
-          {/* Key findings */}
+          <Text style={styles.profileSummary}>
+            Identified {findings.length} key skin issues needing care.
+          </Text>
+
+          {/* ═══ Issue Cards ═══ */}
           <View style={styles.findingsSection}>
             <Text style={styles.findingsSectionTitle}>
-              {findings.length} KEY FINDINGS FROM YOUR SCAN
+              {findings.length} KEY FINDINGS
             </Text>
             {findings.map((finding, index) => (
-              <View key={index} style={styles.findingItem}>
-                <View style={styles.findingHeader}>
-                  <View style={styles.findingBullet} />
-                  <Text style={styles.findingTitle}>{finding.title}</Text>
+              <View key={index} style={styles.issueCardFull}>
+                <View style={styles.issueCardHeader}>
+                  <Text style={styles.issueCardTitle}>{finding.title}</Text>
+                  <View style={styles.fixableBadge}>
+                    <Text style={styles.fixableText}>Fixable</Text>
+                  </View>
                 </View>
-                <Text style={styles.findingDescription}>{finding.description}</Text>
+                <Text style={styles.issueCardDesc}>{finding.description}</Text>
               </View>
             ))}
           </View>
 
-          {/* Motivational text */}
-          <Text style={styles.motivationalText}>
-            Beauty is medicine. This journey is yours {'\u2014'} and every step forward is a step toward the skin you deserve.
-          </Text>
+          {/* ═══ Recommended Products ═══ */}
+          <View style={styles.recsSection}>
+            <Text style={styles.recsTitle}>Recommended Products</Text>
+            <FlatList
+              data={PRODUCTS.filter(p => p.category === 'Skincare').slice(0, 8)}
+              keyExtractor={item => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recsScroll}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.recCard}
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    const url = item.asin
+                      ? `https://www.amazon.com/dp/${item.asin}`
+                      : `https://www.amazon.com/s?k=${encodeURIComponent(item.brand + ' ' + item.name)}`;
+                    Linking.openURL(url);
+                  }}
+                >
+                  {item.image_url ? (
+                    <Image source={{ uri: item.image_url }} style={styles.recImage} resizeMode="contain" />
+                  ) : (
+                    <View style={[styles.recImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F0E8' }]}>
+                      <Text style={{ fontSize: 24 }}>{'\u2728'}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.recCategory}>{item.category}</Text>
+                  <Text style={styles.recName} numberOfLines={2}>{cleanProductName(item.name, item.brand)}</Text>
+                  {item.price ? <Text style={styles.recPrice}>{item.price}</Text> : null}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
 
           {/* CTA button */}
           <TouchableOpacity
@@ -474,10 +597,21 @@ export default function ScanScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Re-scan link */}
-          <TouchableOpacity style={styles.rescanLink} onPress={resetScan}>
-            <Text style={styles.rescanLinkText}>Re-scan</Text>
-          </TouchableOpacity>
+          {/* Bottom actions */}
+          <View style={styles.bottomActions}>
+            <TouchableOpacity style={styles.bottomActionBtn} onPress={resetScan}>
+              <Text style={styles.bottomActionText}>Re-scan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bottomActionBtn, styles.bottomActionPrimary, loggingProgress && { opacity: 0.6 }]}
+              onPress={logToProgress}
+              disabled={loggingProgress}
+            >
+              <Text style={[styles.bottomActionText, styles.bottomActionPrimaryText]}>
+                {loggingProgress ? 'Saving...' : 'Log to Progress'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
 
@@ -500,7 +634,8 @@ function decode(base64: string): Uint8Array {
   return bytes;
 }
 
-const VIEWFINDER_SIZE = SCREEN_WIDTH - 48;
+const VIEWFINDER_WIDTH = SCREEN_WIDTH - 48;
+const VIEWFINDER_HEIGHT = VIEWFINDER_WIDTH * 1.35;
 
 const styles = StyleSheet.create({
   // ── Dark Camera View ──
@@ -521,10 +656,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backArrow: {
-    fontSize: 24,
-    color: Colors.white,
-  },
+  // backArrow style removed — now using BackArrowIcon SVG
   darkHeaderTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -537,7 +669,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.xxl,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
-    height: VIEWFINDER_SIZE,
+    height: VIEWFINDER_HEIGHT,
     position: 'relative',
   },
   camera: {
@@ -557,29 +689,29 @@ const styles = StyleSheet.create({
     borderColor: Colors.white,
   },
   cTL: {
-    top: 16,
-    left: 16,
+    top: 140,
+    left: 40,
     borderTopWidth: 3,
     borderLeftWidth: 3,
     borderTopLeftRadius: 4,
   },
   cTR: {
-    top: 16,
-    right: 16,
+    top: 140,
+    right: 40,
     borderTopWidth: 3,
     borderRightWidth: 3,
     borderTopRightRadius: 4,
   },
   cBL: {
-    bottom: 16,
-    left: 16,
+    bottom: 190,
+    left: 40,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
     borderBottomLeftRadius: 4,
   },
   cBR: {
-    bottom: 16,
-    right: 16,
+    bottom: 190,
+    right: 40,
     borderBottomWidth: 3,
     borderRightWidth: 3,
     borderBottomRightRadius: 4,
@@ -652,16 +784,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sideButtonIcon: {
-    fontSize: 22,
-    color: Colors.white,
-  },
+  // sideButtonIcon style removed — now using RedoIcon SVG
   shutterOuter: {
     width: 76,
     height: 76,
     borderRadius: 38,
     borderWidth: 4,
-    borderColor: Colors.secondary,
+    borderColor: '#2D4A3E',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
@@ -715,10 +844,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
   },
-  resultsBackArrow: {
-    fontSize: 24,
-    color: Colors.text,
-  },
+  // resultsBackArrow style removed — now using BackArrowIcon SVG
   resultsHeaderTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -769,6 +895,196 @@ const styles = StyleSheet.create({
   },
 
   // Photo card
+  photoCardWrapper: {
+    marginHorizontal: Spacing.xxl,
+    marginTop: Spacing.lg,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: Colors.white,
+    ...Shadows.sm,
+  },
+  scanPhoto: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 20,
+  },
+  issuesBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF0EE',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  issuesBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#C8573E',
+  },
+  profileSummary: {
+    fontSize: 13,
+    color: '#8A8A7A',
+    lineHeight: 18,
+    marginHorizontal: Spacing.xxl,
+    marginTop: 8,
+  },
+
+  // Score row — arc + issue cards
+  scoreRow: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.xxl,
+    marginTop: 16,
+    gap: 12,
+    alignItems: 'center',
+  },
+  scoreCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.sm,
+    position: 'relative',
+  },
+  scoreArcBg: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 8,
+    borderColor: '#E8E2D8',
+  },
+  scoreArcFill: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 8,
+    borderColor: '#2D4A3E',
+    borderRightColor: 'transparent',
+    borderBottomColor: 'transparent',
+  },
+  scoreValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1C1C1A',
+  },
+  scoreLabel: {
+    fontSize: 11,
+    color: '#8A8A7A',
+    marginTop: -2,
+  },
+  issueCardsRow: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.xxl,
+    marginTop: 16,
+    gap: 10,
+  },
+  issueCards: {
+    flex: 1,
+    gap: 10,
+  },
+  issueCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    ...Shadows.xs,
+  },
+  issueCardFull: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    ...Shadows.xs,
+  },
+  issueCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  issueCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1C1C1A',
+    flex: 1,
+  },
+  fixableBadge: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  fixableText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2D4A3E',
+  },
+  issueCardDesc: {
+    fontSize: 13,
+    color: '#8A8A7A',
+    lineHeight: 19,
+  },
+  issueCardStatus: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2D4A3E',
+  },
+
+  // Recommended products
+  recsSection: {
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  recsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1C1C1A',
+    marginBottom: 14,
+    marginHorizontal: Spacing.xxl,
+  },
+  recsScroll: {
+    paddingHorizontal: Spacing.xxl,
+    gap: 12,
+  },
+  recCard: {
+    width: 140,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 10,
+    ...Shadows.xs,
+  },
+  recImage: {
+    width: 120,
+    height: 100,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  recCategory: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#9B9488',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  recName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1C1C1A',
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  recPrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2D4A3E',
+  },
+
+  // Legacy — keep for compatibility
   photoCard: {
     marginHorizontal: Spacing.xxl,
     marginTop: Spacing.lg,
@@ -781,6 +1097,41 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1,
   },
+  zoneOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  zoneMarker: {
+    position: 'absolute',
+    alignItems: 'center',
+    transform: [{ translateX: -30 }, { translateY: -10 }],
+  },
+  zoneMarkerDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.secondary,
+    borderWidth: 2,
+    borderColor: Colors.white,
+    marginBottom: 4,
+  },
+  zoneMarkerLabel: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  zoneMarkerText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  zoneMarkerSeverity: {
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
   photoHint: {
     fontSize: 12,
     color: Colors.textMuted,
@@ -792,14 +1143,14 @@ const styles = StyleSheet.create({
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.xxl,
-    marginTop: Spacing.lg,
+    gap: 8,
+    marginHorizontal: Spacing.xxl,
+    marginTop: 14,
   },
   typeChip: {
     backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: BorderRadius.pill,
   },
   typeChipText: {
@@ -926,7 +1277,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Re-scan
+  // Bottom actions
+  bottomActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginHorizontal: Spacing.xxl,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.xl,
+  },
+  bottomActionBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md + 2,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  bottomActionPrimary: {},
+  bottomActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  bottomActionPrimaryText: {},
   rescanLink: {
     alignItems: 'center',
     paddingVertical: Spacing.lg,

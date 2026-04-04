@@ -51,19 +51,51 @@ function ProductsIcon({ color }: { color: string }) {
 function ScanIcon({ focused }: { focused: boolean }) {
   return (
     <View style={[tabStyles.scanCircle, focused && tabStyles.scanCircleFocused]}>
-      <View style={{ width: 18, height: 14, borderWidth: 2, borderColor: Colors.white, borderRadius: 4 }}>
-        <View style={{ position: 'absolute', top: -4, left: 6, width: 6, height: 3, borderTopLeftRadius: 2, borderTopRightRadius: 2, borderWidth: 2, borderBottomWidth: 0, borderColor: Colors.white }} />
-        <View style={{ position: 'absolute', top: 2, left: 3, width: 6, height: 6, borderRadius: 3, borderWidth: 1.5, borderColor: Colors.white }} />
+      <View style={{ width: 28, height: 22, position: 'relative' }}>
+        {/* Camera top bump — centered */}
+        <View style={{
+          position: 'absolute', top: 0, left: 8, width: 12, height: 6,
+          backgroundColor: '#FFFFFF',
+          borderTopLeftRadius: 3, borderTopRightRadius: 3,
+        }} />
+        {/* Camera body — solid filled rounded rect */}
+        <View style={{
+          position: 'absolute', top: 4, width: 28, height: 18,
+          backgroundColor: '#FFFFFF',
+          borderRadius: 4,
+          justifyContent: 'center', alignItems: 'center',
+        }}>
+          {/* Lens — green ring with green center (punched out look) */}
+          <View style={{
+            width: 12, height: 12, borderRadius: 6,
+            borderWidth: 2.5,
+            borderColor: focused ? '#1E3329' : '#2D4A3E',
+            backgroundColor: focused ? '#1E3329' : '#2D4A3E',
+          }} />
+          {/* Lens inner white ring */}
+          <View style={{
+            position: 'absolute',
+            width: 10, height: 10, borderRadius: 5,
+            borderWidth: 2,
+            borderColor: '#FFFFFF',
+            backgroundColor: 'transparent',
+          }} />
+          {/* Flash dot — top left */}
+          <View style={{
+            position: 'absolute', top: 3, left: 3,
+            width: 3, height: 3, borderRadius: 1.5,
+            backgroundColor: focused ? '#1E3329' : '#2D4A3E',
+          }} />
+        </View>
       </View>
     </View>
   );
 }
 
-function TabIcon({ label, icon, color }: { label: string; icon: React.ReactNode; color: string }) {
+function TabIcon({ icon }: { icon: React.ReactNode }) {
   return (
     <View style={tabStyles.iconWrapper}>
       {icon}
-      <Text style={[tabStyles.label, { color }]}>{label}</Text>
     </View>
   );
 }
@@ -73,13 +105,13 @@ const tabStyles = StyleSheet.create({
   label: { fontSize: 10, fontWeight: '500', letterSpacing: 0.2 },
   scanCircle: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: Colors.secondary,
+    backgroundColor: '#2D4A3E',
     justifyContent: 'center', alignItems: 'center',
     marginTop: -22,
     borderWidth: 3, borderColor: Colors.white,
     ...Shadows.lg,
   },
-  scanCircleFocused: { backgroundColor: Colors.secondaryDark },
+  scanCircleFocused: { backgroundColor: '#1E3329' },
 });
 
 export default function TabsLayout() {
@@ -107,7 +139,7 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Home" color={focused ? Colors.primary : Colors.textMuted} icon={<HomeIcon color={focused ? Colors.primary : Colors.textMuted} />} />
+            <TabIcon icon={<HomeIcon color={focused ? Colors.primary : Colors.textMuted} />} />
           ),
         }}
       />
@@ -116,7 +148,7 @@ export default function TabsLayout() {
         options={{
           title: 'Plan',
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Plan" color={focused ? Colors.primary : Colors.textMuted} icon={<PlanIcon color={focused ? Colors.primary : Colors.textMuted} />} />
+            <TabIcon icon={<PlanIcon color={focused ? Colors.primary : Colors.textMuted} />} />
           ),
         }}
       />
@@ -132,16 +164,16 @@ export default function TabsLayout() {
         options={{
           title: 'Log',
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Log" color={focused ? Colors.primary : Colors.textMuted} icon={<LogIcon color={focused ? Colors.primary : Colors.textMuted} />} />
+            <TabIcon icon={<LogIcon color={focused ? Colors.primary : Colors.textMuted} />} />
           ),
         }}
       />
       <Tabs.Screen
         name="scanner"
         options={{
-          title: 'Products',
+          title: 'Shop',
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Products" color={focused ? Colors.primary : Colors.textMuted} icon={<ProductsIcon color={focused ? Colors.primary : Colors.textMuted} />} />
+            <TabIcon icon={<ProductsIcon color={focused ? Colors.primary : Colors.textMuted} />} />
           ),
         }}
       />
