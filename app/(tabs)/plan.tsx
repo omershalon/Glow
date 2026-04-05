@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle, Path, Rect, Line } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
@@ -345,6 +346,21 @@ export default function PlanScreen() {
         .single();
 
       if (data) {
+        // Soft bubbly vibrations — fast pops that trail off
+        Haptics.selectionAsync();
+        setTimeout(() => Haptics.selectionAsync(), 60);
+        setTimeout(() => Haptics.selectionAsync(), 130);
+        setTimeout(() => Haptics.selectionAsync(), 210);
+        setTimeout(() => Haptics.selectionAsync(), 300);
+        setTimeout(() => Haptics.selectionAsync(), 400);
+        setTimeout(() => Haptics.selectionAsync(), 510);
+        setTimeout(() => Haptics.selectionAsync(), 630);
+        setTimeout(() => Haptics.selectionAsync(), 770);
+        setTimeout(() => Haptics.selectionAsync(), 920);
+        setTimeout(() => Haptics.selectionAsync(), 1090);
+        setTimeout(() => Haptics.selectionAsync(), 1280);
+        setTimeout(() => Haptics.selectionAsync(), 1500);
+
         // Trigger bubbles + card bounce
         if (!cardScaleAnims[item.impact_rank]) cardScaleAnims[item.impact_rank] = new Animated.Value(1);
         cardScaleAnims[item.impact_rank].setValue(1);

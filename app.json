@@ -14,7 +14,9 @@
       "bundleIdentifier": "com.glow.skincare",
       "infoPlist": {
         "NSCameraUsageDescription": "Glow needs camera access to analyze your skin and scan products",
-        "NSPhotoLibraryUsageDescription": "Glow needs photo library access for skin analysis"
+        "NSPhotoLibraryUsageDescription": "Glow needs photo library access for skin analysis",
+        "NSMicrophoneUsageDescription": "Glow needs microphone access to talk to your Skin Coach",
+        "NSSpeechRecognitionUsageDescription": "Glow needs speech recognition to understand your voice"
       }
     },
     "android": {
@@ -41,7 +43,14 @@
           "photosPermission": "Allow Glow to analyze your skin photos"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Glow needs microphone access to talk to your Skin Coach",
+          "speechRecognitionPermission": "Glow needs speech recognition to understand your voice"
+        }
+      ]
     ],
     "scheme": "glow"
   }

@@ -374,18 +374,6 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
 
-        {/* ── Compare Products ── */}
-        <TouchableOpacity style={styles.compareCard} activeOpacity={0.85}>
-          <View style={styles.compareIconCircle}>
-            <ScaleIcon color="#6B5B3E" size={18} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.compareTitle}>Compare Products</Text>
-            <Text style={styles.compareSubtext}>See two products side by side</Text>
-          </View>
-          <Text style={styles.compareArrow}>→</Text>
-        </TouchableOpacity>
-
         {/* ── Explore grid ── */}
         <Text style={[styles.sectionTitle, { marginTop: Spacing.xxl }]}>Explore</Text>
         <View style={styles.exploreGrid}>

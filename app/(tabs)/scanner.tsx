@@ -190,28 +190,38 @@ export default function ScannerScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Shop</Text>
+        <Text style={styles.title}>Skin Shop</Text>
         <Text style={styles.subtitle}>Curated for skin health</Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollInner} showsVerticalScrollIndicator={false}>
-        {/* Search */}
-        <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>{'\u{1F50E}'}</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search skincare, supplements, foods..."
-            placeholderTextColor="#B5AFA5"
-            value={searchQuery}
-            onChangeText={handleSearchChange}
-            returnKeyType="search"
-          />
-          {isSearching && <ActivityIndicator size="small" color="#2D4A3E" style={{ marginRight: 4 }} />}
-          {searchQuery.length > 0 && !isSearching && (
-            <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.clearIcon}>{'\u2715'}</Text>
-            </TouchableOpacity>
-          )}
+        {/* Search + Scan row */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchBar}>
+            <Text style={styles.searchIcon}>{'\u{1F50E}'}</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search skincare, supplements, foods..."
+              placeholderTextColor="#B5AFA5"
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              returnKeyType="search"
+            />
+            {isSearching && <ActivityIndicator size="small" color="#2D4A3E" style={{ marginRight: 4 }} />}
+            {searchQuery.length > 0 && !isSearching && (
+              <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.clearIcon}>{'\u2715'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity style={styles.scanBtn} onPress={startCamera} activeOpacity={0.8}>
+            <View style={styles.scanBtnIcon}>
+              <View style={[styles.scanCorner, { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 }]} />
+              <View style={[styles.scanCorner, { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 }]} />
+              <View style={[styles.scanCorner, { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 }]} />
+              <View style={[styles.scanCorner, { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 }]} />
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Category tabs — hide during live search */}
@@ -275,20 +285,6 @@ export default function ScannerScreen() {
           </View>
         )}
 
-        {/* Scan CTA */}
-        <TouchableOpacity style={styles.scanCta} onPress={startCamera} activeOpacity={0.88}>
-          <View style={styles.scanCtaIcon}>
-            <View style={[styles.ctaCorner, { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 }]} />
-            <View style={[styles.ctaCorner, { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 }]} />
-            <View style={[styles.ctaCorner, { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 }]} />
-            <View style={[styles.ctaCorner, { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 }]} />
-          </View>
-          <View>
-            <Text style={styles.scanCtaTitle}>Scan a product</Text>
-            <Text style={styles.scanCtaSub}>Point your camera at a barcode</Text>
-          </View>
-          <Text style={styles.scanCtaArrow}>{'\u203A'}</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {showPaywall && (
@@ -318,10 +314,25 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollInner: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 130 },
 
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14,
+  },
   searchBar: {
-    flexDirection: 'row', alignItems: 'center',
+    flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#F2EDE6', borderRadius: 14,
-    paddingHorizontal: 14, height: 48, marginBottom: 14,
+    paddingHorizontal: 14, height: 48,
+  },
+  scanBtn: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: '#2D4A3E',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scanBtnIcon: {
+    width: 20, height: 20, position: 'relative',
+  },
+  scanCorner: {
+    position: 'absolute', width: 7, height: 7,
+    borderColor: '#FFFFFF', borderRadius: 1,
   },
   searchIcon: { fontSize: 15, opacity: 0.45, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: '#1C1C1A', height: 48 },

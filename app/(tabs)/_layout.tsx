@@ -171,7 +171,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="scanner"
         options={{
-          title: 'Shop',
+          title: 'Skin Shop',
           tabBarIcon: ({ focused }) => (
             <TabIcon icon={<ProductsIcon color={focused ? Colors.primary : Colors.textMuted} />} />
           ),

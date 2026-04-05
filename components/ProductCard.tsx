@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
   iconBox: {
     width: '100%',
     height: 90,
-    backgroundColor: '#F7F5F1',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
