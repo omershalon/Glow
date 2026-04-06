@@ -1030,17 +1030,17 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
 
-  /* ── routine card ── */
+  /* ── routine card — matches pickCard style ── */
   routineCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.xl,
     paddingVertical: Spacing.lg,
     paddingLeft: Spacing.lg,
     paddingRight: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
   },
   routineCardInner: {
     flex: 1,
@@ -1090,7 +1090,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     marginHorizontal: Spacing.xxl,
     marginBottom: Spacing.sm,
-    backgroundColor: '#F2FAF5',
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     borderWidth: 1,

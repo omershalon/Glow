@@ -418,13 +418,13 @@ export default function ProgressScreen() {
           <View style={styles.card}>
             <View style={styles.monthNav}>
               <TouchableOpacity onPress={() => setCalendarMonth(m => subMonths(m, 1))} style={styles.monthNavBtn}>
-                <ChevronLeftIcon size={28} color={Colors.primary} />
+                <ChevronLeftIcon size={28} color="#6B6358" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setCalendarFullscreen(true)} activeOpacity={0.7}>
                 <Text style={styles.monthTitle}>{format(calendarMonth, 'MMMM yyyy')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setCalendarMonth(m => addMonths(m, 1))} style={styles.monthNavBtn}>
-                <ChevronRightIcon size={28} color={Colors.primary} />
+                <ChevronRightIcon size={28} color="#6B6358" />
               </TouchableOpacity>
             </View>
 
@@ -982,16 +982,16 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
     gap: Spacing.md,
   },
-  cardTitle: { ...Typography.headlineSmall, color: Colors.text },
-  cardSubtitle: { ...Typography.caption, color: Colors.textMuted, marginTop: -Spacing.sm },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: '#1C1C1A' },
+  cardSubtitle: { fontSize: 11, color: '#8A8A7A', marginTop: -Spacing.sm },
 
   // Calendar
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   monthNavBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  monthTitle: { ...Typography.headlineMedium, color: Colors.text },
+  monthTitle: { fontSize: 18, fontWeight: '600', color: '#1C1C1A' },
   calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayHeader: { width: DAY_CELL, alignItems: 'center', paddingBottom: Spacing.sm },
-  dayHeaderText: { ...Typography.caption, color: Colors.textMuted, fontWeight: '700' },
+  dayHeaderText: { fontSize: 11, color: '#8A8A7A', fontWeight: '700', letterSpacing: 0.3 },
   dayCell: {
     width: DAY_CELL,
     height: DAY_CELL,
@@ -1018,9 +1018,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.secondary,
   },
   dayCellNumber: {
-    ...Typography.caption,
-    color: Colors.textMuted,
     fontSize: 13,
+    color: '#6B6358',
     fontWeight: '500',
   },
   dayCellThumb: {
@@ -1059,8 +1058,8 @@ const styles = StyleSheet.create({
   },
   compareImage: { width: '100%', aspectRatio: 1 },
   compareInfo: { padding: Spacing.md },
-  compareDateText: { ...Typography.labelMedium, color: Colors.text },
-  compareWeekText: { ...Typography.caption, color: Colors.textMuted, marginTop: Spacing.xxs },
+  compareDateText: { fontSize: 12, fontWeight: '600', color: '#1C1C1A' },
+  compareWeekText: { fontSize: 11, color: '#8A8A7A', marginTop: Spacing.xxs },
 
   // Metric cards
   metricsRow: { flexDirection: 'row', gap: Spacing.md },
@@ -1071,16 +1070,16 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     ...Shadows.sm,
   },
-  metricLabel: { ...Typography.caption, color: Colors.textSecondary, marginBottom: Spacing.xs },
+  metricLabel: { fontSize: 11, color: '#6B6358', marginBottom: Spacing.xs },
   metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  metricValue: { ...Typography.headlineSmall, color: Colors.success, fontWeight: '700' },
+  metricValue: { fontSize: 16, fontWeight: '700', color: '#2D9B6E' },
 
-  placeholderText: { ...Typography.bodySmall, color: Colors.textMuted },
+  placeholderText: { fontSize: 12, color: '#8A8A7A' },
 
   // Zone rows
-  zoneRow: { flexDirection: 'row', gap: Spacing.md, paddingVertical: Spacing.xs, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
-  zoneLabel: { ...Typography.labelSmall, color: Colors.primary, width: 90 },
-  zoneValue: { ...Typography.bodySmall, color: Colors.textSecondary, flex: 1 },
+  zoneRow: { flexDirection: 'row', gap: Spacing.md, paddingVertical: Spacing.xs, borderBottomWidth: 1, borderBottomColor: '#E8E2D8' },
+  zoneLabel: { fontSize: 11, fontWeight: '500', color: '#7C5CFC', width: 90, letterSpacing: 0.5 },
+  zoneValue: { fontSize: 12, color: '#6B6358', flex: 1 },
 
   // Modal
   modalRoot: { flex: 1, backgroundColor: Colors.background },
@@ -1098,7 +1097,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1118,7 +1117,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
     gap: 2,
   },
   modalBadgeLabel: { ...Typography.caption, color: Colors.textMuted },
@@ -1128,7 +1127,7 @@ const styles = StyleSheet.create({
   modalInsightBox: {
     borderRadius: BorderRadius.md,
     padding: Spacing.lg,
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
   },
   modalInsightText: { ...Typography.bodySmall, color: Colors.textSecondary, lineHeight: 20 },
 
@@ -1318,7 +1317,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   expandAnalysisBox: {
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.md,
     padding: Spacing.lg,
   },
