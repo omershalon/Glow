@@ -81,7 +81,8 @@ const styles = StyleSheet.create({
     height: 90,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 8,
     position: 'relative',
   },
   productImage: {
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     left: 10,
-    backgroundColor: 'rgba(45, 74, 62, 0.88)',
+    backgroundColor: 'rgba(124, 92, 252, 0.88)',
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 10,
@@ -108,8 +109,8 @@ const styles = StyleSheet.create({
   },
   info: {
     padding: 14,
-    paddingTop: 12,
-    gap: 3,
+    paddingTop: 16,
+    gap: 0,
     flex: 1,
   },
   brand: {
@@ -118,6 +119,7 @@ const styles = StyleSheet.create({
     color: '#9B9488',
     textTransform: 'uppercase',
     letterSpacing: 1.4,
+    marginBottom: 6,
   },
   name: {
     fontSize: 14,
@@ -125,13 +127,13 @@ const styles = StyleSheet.create({
     color: Colors.text,
     lineHeight: 18,
     letterSpacing: -0.1,
+    marginBottom: 2,
   },
   desc: {
     fontSize: 11,
     fontWeight: '400',
     color: '#8A8A7A',
     lineHeight: 15,
-    marginTop: 2,
   },
   bottomRow: {
     flexDirection: 'row',
@@ -142,11 +144,11 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#2D4A3E',
+    color: Colors.primary,
     letterSpacing: -0.2,
   },
   amazonBtn: {
-    backgroundColor: '#F0EBE2',
+    backgroundColor: 'rgba(124, 92, 252, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
@@ -154,6 +156,6 @@ const styles = StyleSheet.create({
   amazonText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#6B6358',
+    color: Colors.primary,
   },
 });

@@ -57,7 +57,7 @@ export default function ProductDetailsScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 20, paddingTop: insets.top + 12 }}>
-          <Text style={{ fontSize: 16, color: '#2D4A3E', fontWeight: '600' }}>{'\u2039'} Back</Text>
+          <Text style={{ fontSize: 16, color: Colors.primary, fontWeight: '600' }}>{'\u2039'} Back</Text>
         </TouchableOpacity>
         <Text style={styles.errorText}>Product not found</Text>
       </View>
@@ -88,14 +88,7 @@ export default function ProductDetailsScreen() {
           <Text style={styles.navBack}>{'\u2039'}</Text>
         </TouchableOpacity>
         <Text style={styles.navTitle}>Product Details</Text>
-        <View style={styles.navRight}>
-          <TouchableOpacity style={styles.navBtn} activeOpacity={0.7}>
-            <Text style={styles.navIcon}>{'\u2661'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navBtn} activeOpacity={0.7}>
-            <Text style={styles.navIcon}>{'\u{1F4E4}'}</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={styles.navRight} />
       </View>
 
       <ScrollView
@@ -109,7 +102,7 @@ export default function ProductDetailsScreen() {
             <Text style={styles.toggleActiveText}>Safety Rating</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.toggleTab, styles.toggleInactive]} activeOpacity={0.8}>
-            <Text style={styles.toggleInactiveText}>{'\u{1F512}'} Skin Match</Text>
+            <Text style={styles.toggleInactiveText}>Skin Match</Text>
           </TouchableOpacity>
         </View>
 
@@ -137,7 +130,6 @@ export default function ProductDetailsScreen() {
 
         {/* Buy Online button */}
         <TouchableOpacity style={styles.buyBtn} activeOpacity={0.85} onPress={() => Linking.openURL(amazonUrl)}>
-          <Text style={styles.buyIcon}>{'\u{1F6D2}'}</Text>
           <Text style={styles.buyText}>Buy Online</Text>
         </TouchableOpacity>
 
@@ -148,13 +140,11 @@ export default function ProductDetailsScreen() {
           {/* Key Benefits */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionEmoji}>{'\u2B50'}</Text>
               <Text style={styles.sectionLabel}>KEY BENEFITS</Text>
             </View>
             <View style={styles.benefitsGrid}>
               {KEY_BENEFITS.map(b => (
                 <View key={b} style={styles.benefitItem}>
-                  <Text style={styles.benefitStar}>{'\u2B50'}</Text>
                   <Text style={styles.benefitText}>{b}</Text>
                 </View>
               ))}
@@ -164,7 +154,6 @@ export default function ProductDetailsScreen() {
           {/* Composition */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionEmoji}>{'\u2705'}</Text>
               <Text style={styles.sectionLabel}>COMPOSITION</Text>
             </View>
             <View style={styles.compositionGrid}>
@@ -173,7 +162,7 @@ export default function ProductDetailsScreen() {
                   <View style={[styles.compositionDot, tag.good ? styles.dotGood : styles.dotBad]}>
                     <Text style={styles.dotIcon}>{tag.good ? '\u2713' : '\u2715'}</Text>
                   </View>
-                  <Text style={[styles.compositionText, tag.good ? styles.textGood : styles.textBad]}>
+                  <Text style={styles.compositionText}>
                     {tag.label}
                   </Text>
                 </View>
@@ -186,7 +175,6 @@ export default function ProductDetailsScreen() {
         {showIngredients && concerns.length > 0 && (
           <View style={styles.concernsCard}>
             <View style={styles.concernsHeader}>
-              <Text style={styles.concernsIcon}>{'\u26A0\uFE0F'}</Text>
               <Text style={styles.concernsTitle}>Ingredient Concerns</Text>
             </View>
             {concerns.map(c => (
@@ -233,7 +221,7 @@ export default function ProductDetailsScreen() {
           {/* Loading state */}
           {ingredientsLoading && (
             <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <ActivityIndicator size="small" color="#2D4A3E" />
+              <ActivityIndicator size="small" color={Colors.primary} />
               <Text style={{ fontSize: 13, color: '#9B9488', marginTop: 8 }}>Loading ingredients...</Text>
             </View>
           )}
@@ -277,7 +265,7 @@ export default function ProductDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FDF8F2' },
+  container: { flex: 1, backgroundColor: Colors.background },
   errorText: { fontSize: 16, color: '#9B9488', textAlign: 'center', marginTop: 100 },
 
   // Nav
@@ -287,12 +275,11 @@ const styles = StyleSheet.create({
   },
   navBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#F0EBE2', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
   },
-  navBack: { fontSize: 28, color: Colors.text, marginTop: -2, fontWeight: '300' },
-  navTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  navBack: { fontSize: 28, color: Colors.white, marginTop: -2, fontWeight: '300' },
+  navTitle: { fontSize: 16, fontWeight: '600', color: Colors.white },
   navRight: { flexDirection: 'row', gap: 8 },
-  navIcon: { fontSize: 17, color: Colors.text },
 
   // Scroll
   scroll: { flex: 1 },
@@ -300,7 +287,7 @@ const styles = StyleSheet.create({
 
   // Toggle
   toggle: {
-    flexDirection: 'row', backgroundColor: '#F0EBE2',
+    flexDirection: 'row', backgroundColor: Colors.card,
     borderRadius: 16, padding: 4, marginBottom: 16,
   },
   toggleTab: { flex: 1, paddingVertical: 14, borderRadius: 13, alignItems: 'center' },
@@ -313,7 +300,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: SCREEN_WIDTH * 0.6, height: SCREEN_WIDTH * 0.5,
     borderRadius: SCREEN_WIDTH * 0.25,
-    backgroundColor: '#C5CEB5', opacity: 0.3,
+    backgroundColor: Colors.primary, opacity: 0.12,
     transform: [{ rotate: '-12deg' }],
   },
   productImage: { width: SCREEN_WIDTH * 0.42, height: SCREEN_WIDTH * 0.56 },
@@ -324,52 +311,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6,
   },
   brandName: {
-    fontSize: 13, fontWeight: '600', color: '#8B8175',
+    fontSize: 13, fontWeight: '600', color: '#9B9488',
     textTransform: 'uppercase', letterSpacing: 0.8,
   },
-  brandArrow: { fontSize: 16, color: '#8B8175', fontWeight: '300' },
+  brandArrow: { fontSize: 16, color: '#9B9488', fontWeight: '300' },
   categoryChip: {
-    backgroundColor: '#F0EBE2', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
+    backgroundColor: Colors.card, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
   },
-  categoryChipText: { fontSize: 12, fontWeight: '500', color: '#6B6358' },
+  categoryChipText: { fontSize: 12, fontWeight: '500', color: '#9B9488' },
 
   // Product name
   productName: {
-    fontSize: 26, fontWeight: '700', color: Colors.text,
+    fontSize: 26, fontWeight: '700', color: Colors.white,
     lineHeight: 32, marginBottom: 18,
   },
 
-  toggleActive: { backgroundColor: '#7B8F6B', ...Shadows.xs },
+  toggleActive: { backgroundColor: Colors.primary, ...Shadows.xs },
   toggleInactive: { backgroundColor: 'transparent' },
   toggleActiveText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
-  toggleInactiveText: { fontSize: 14, fontWeight: '500', color: '#9B9183' },
+  toggleInactiveText: { fontSize: 14, fontWeight: '500', color: '#9B9488' },
 
   // Buy button
   buyBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#4A5A3C', borderRadius: 14, paddingVertical: 16,
+    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16,
     gap: 8, marginBottom: 20, ...Shadows.sm,
   },
-  buyIcon: { fontSize: 18 },
   buyText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
 
   // ═══ Product Snapshot Card ═══
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
+    backgroundColor: Colors.card, borderRadius: 20, padding: 20,
     marginBottom: 16, ...Shadows.sm,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 20 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: Colors.white, marginBottom: 20 },
 
   section: { marginBottom: 20 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  sectionEmoji: { fontSize: 14 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#8B8175', letterSpacing: 1.2 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9B9488', letterSpacing: 1.2 },
 
   // Benefits
   benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   benefitItem: { flexDirection: 'row', alignItems: 'center', width: '50%', gap: 8, marginBottom: 12 },
-  benefitStar: { fontSize: 13 },
-  benefitText: { fontSize: 14, fontWeight: '500', color: Colors.text },
+  benefitText: { fontSize: 14, fontWeight: '500', color: Colors.white },
 
   // Composition
   compositionGrid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -379,26 +363,23 @@ const styles = StyleSheet.create({
   },
   dotGood: { backgroundColor: '#E8F5E9' },
   dotBad: { backgroundColor: '#FDEAEA' },
-  dotIcon: { fontSize: 11, fontWeight: '700' },
-  compositionText: { fontSize: 13, fontWeight: '500' },
-  textGood: { color: '#4CAF87' },
-  textBad: { color: '#C84040' },
+  dotIcon: { fontSize: 11, fontWeight: '700', color: Colors.primary },
+  compositionText: { fontSize: 13, fontWeight: '500', color: Colors.white },
 
   // ═══ Ingredient Concerns Card ═══
   concernsCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
-    marginBottom: 16, borderWidth: 1, borderColor: '#F5D5D5',
+    backgroundColor: Colors.card, borderRadius: 20, padding: 20,
+    marginBottom: 16, borderWidth: 1, borderColor: 'rgba(200,64,64,0.3)',
   },
   concernsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  concernsIcon: { fontSize: 16 },
   concernsTitle: { fontSize: 16, fontWeight: '700', color: '#C84040' },
   concernItem: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#FFF5F5', borderRadius: 14, padding: 16, marginBottom: 10,
+    backgroundColor: 'rgba(200,64,64,0.1)', borderRadius: 14, padding: 16, marginBottom: 10,
   },
   concernDot: {
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#FDEAEA', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(200,64,64,0.2)', alignItems: 'center', justifyContent: 'center',
   },
   concernX: { fontSize: 12, color: '#C84040', fontWeight: '700' },
   concernName: { fontSize: 15, fontWeight: '600', color: '#C84040' },
@@ -409,30 +390,30 @@ const styles = StyleSheet.create({
   ingredientsHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14,
   },
-  ingredientsTitle: { fontSize: 20, fontWeight: '700', color: Colors.text },
+  ingredientsTitle: { fontSize: 20, fontWeight: '700', color: Colors.white },
   ingredientsCount: { fontSize: 13, color: '#9B9488' },
 
   // Filter tabs
   filterRow: {
-    flexDirection: 'row', backgroundColor: '#F5F0E8', borderRadius: 12,
+    flexDirection: 'row', backgroundColor: Colors.card, borderRadius: 12,
     padding: 3, marginBottom: 16,
   },
   filterTab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  filterTabActive: { backgroundColor: '#FFFFFF', ...Shadows.xs },
+  filterTabActive: { backgroundColor: Colors.backgroundAlt, ...Shadows.xs },
   filterTabText: { fontSize: 12, fontWeight: '600', color: '#9B9488' },
-  filterTabTextActive: { color: Colors.text },
+  filterTabTextActive: { color: Colors.white },
 
   // Ingredient cards
   ingredientCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 14,
-    padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#F0EBE2',
+    backgroundColor: Colors.card, borderRadius: 14,
+    padding: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.border,
   },
   ingredientRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   ingredientDot: { width: 10, height: 10, borderRadius: 5 },
   ingredientDotGood: { backgroundColor: '#4CAF87' },
   ingredientDotConcern: { backgroundColor: '#E8A838' },
   ingredientDotNeutral: { backgroundColor: '#C4BDB0' },
-  ingredientName: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.text },
+  ingredientName: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.white },
   ingredientChevron: { fontSize: 16, color: '#C4BDB0' },
   ingredientDetail: { fontSize: 13, color: '#8A8A7A', lineHeight: 20, marginTop: 10, paddingLeft: 22 },
 });

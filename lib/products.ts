@@ -132,8 +132,8 @@ export const PRODUCTS: Product[] = [
   {
     "id": "sk-8",
     "asin": "B000HK1OOY",
-    "brand": "Dr",
-    "name": "Dr. Bronner’s - Pure-Castile Liquid Soap (Baby Unscented",
+    "brand": "Dr. Bronner’s",
+    "name": "Dr. Bronner’s Pure-Castile Liquid Soap Baby Unscented",
     "category": "Skincare",
     "image_url": "https://m.media-amazon.com/images/I/71fKjPdT-xL._SL1500_.jpg",
     "price": "$17.17",

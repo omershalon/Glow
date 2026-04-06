@@ -203,7 +203,6 @@ export default function ScannerScreen() {
         {/* Search + Scan row */}
         <View style={styles.searchRow}>
           <View style={styles.searchBar}>
-            <Text style={styles.searchIcon}>{'\u{1F50E}'}</Text>
             <TextInput
               style={styles.searchInput}
               placeholder="Search skincare, supplements, foods..."
@@ -212,7 +211,7 @@ export default function ScannerScreen() {
               onChangeText={handleSearchChange}
               returnKeyType="search"
             />
-            {isSearching && <ActivityIndicator size="small" color="#2D4A3E" style={{ marginRight: 4 }} />}
+            {isSearching && <ActivityIndicator size="small" color="#7C5CFC" style={{ marginRight: 4 }} />}
             {searchQuery.length > 0 && !isSearching && (
               <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text style={styles.clearIcon}>{'\u2715'}</Text>
@@ -241,7 +240,6 @@ export default function ScannerScreen() {
                 onPress={() => setActiveFilter(cat)}
                 activeOpacity={0.8}
               >
-                {meta && <Text style={styles.tabEmoji}>{meta.emoji}</Text>}
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
                   {cat === 'All' ? 'All' : meta!.label}
                 </Text>
@@ -268,7 +266,7 @@ export default function ScannerScreen() {
 
         {analyzing && (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#2D4A3E" />
+            <ActivityIndicator size="small" color="#7C5CFC" />
             <Text style={styles.loadingText}>Analyzing product...</Text>
           </View>
         )}
@@ -329,7 +327,7 @@ const styles = StyleSheet.create({
   },
   scanBtn: {
     width: 48, height: 48, borderRadius: 14,
-    backgroundColor: '#2D4A3E',
+    backgroundColor: '#7C5CFC',
     alignItems: 'center', justifyContent: 'center',
   },
   scanBtnIcon: {
@@ -351,7 +349,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10,
     borderRadius: 24, backgroundColor: '#F2EDE6',
   },
-  tabActive: { backgroundColor: '#2D4A3E' },
+  tabActive: { backgroundColor: '#7C5CFC' },
   tabEmoji: { fontSize: 14 },
   tabLabel: { fontSize: 13, fontWeight: '600', color: '#6B6358' },
   tabLabelActive: { color: '#FFFFFF' },
@@ -364,11 +362,11 @@ const styles = StyleSheet.create({
   countTextActive: { color: '#FFFFFF' },
 
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1C1C1A', letterSpacing: -0.2 },
-  sectionCount: { fontSize: 13, color: '#9B9488' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.2 },
+  sectionCount: { fontSize: 13, color: '#FFFFFF' },
 
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  loadingText: { fontSize: 13, color: '#2D4A3E', fontWeight: '500' },
+  loadingText: { fontSize: 13, color: '#7C5CFC', fontWeight: '500' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   gridCell: { marginBottom: CARD_GAP },
@@ -384,7 +382,7 @@ const styles = StyleSheet.create({
     padding: 18, marginTop: 8, ...Shadows.sm,
   },
   scanCtaIcon: { width: 28, height: 28, position: 'relative' },
-  ctaCorner: { position: 'absolute', width: 9, height: 9, borderColor: '#2D4A3E', borderRadius: 1 },
+  ctaCorner: { position: 'absolute', width: 9, height: 9, borderColor: '#7C5CFC', borderRadius: 1 },
   scanCtaTitle: { fontSize: 14, fontWeight: '600', color: '#1C1C1A' },
   scanCtaSub: { fontSize: 12, color: '#9B9488', marginTop: 1 },
   scanCtaArrow: { fontSize: 22, color: '#C4BDB0', marginLeft: 'auto', fontWeight: '300' },
@@ -410,7 +408,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(28,28,26,0.85)', justifyContent: 'flex-end',
   },
   paywallCard: {
-    backgroundColor: '#2D4A3E', borderTopLeftRadius: 32, borderTopRightRadius: 32,
+    backgroundColor: '#7C5CFC', borderTopLeftRadius: 32, borderTopRightRadius: 32,
     padding: 28, paddingBottom: 44, gap: 16, alignItems: 'center',
   },
   paywallEmoji: { fontSize: 44 },

@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
+  Animated,
   ScrollView,
   Alert,
   ActivityIndicator,
@@ -186,6 +188,24 @@ export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const cameraRef = useRef<CameraView>(null);
+  const shutterScale = useRef(new Animated.Value(1)).current;
+  const shutterFill  = useRef(new Animated.Value(0)).current;
+
+  const onShutterPressIn = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(shutterScale, { toValue: 0.82, useNativeDriver: true, speed: 50, bounciness: 4 }),
+      Animated.timing(shutterFill,  { toValue: 1, duration: 120, useNativeDriver: false }),
+    ]).start();
+  }, []);
+
+  const onShutterPressOut = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(shutterScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 10 }),
+      Animated.timing(shutterFill,  { toValue: 0, duration: 200, useNativeDriver: false }),
+    ]).start();
+  }, []);
+
+  const shutterBg = shutterFill.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#7C5CFC'] });
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -498,9 +518,15 @@ export default function ScanScreen() {
             <TouchableOpacity style={styles.sideButton} onPress={resetScan} activeOpacity={0.7}>
               <RedoIcon size={22} color={Colors.white} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.shutterOuter} onPress={capturePhoto} activeOpacity={0.85}>
-              <View style={styles.shutterInner} />
-            </TouchableOpacity>
+            <Pressable
+              onPress={capturePhoto}
+              onPressIn={onShutterPressIn}
+              onPressOut={onShutterPressOut}
+            >
+              <Animated.View style={[styles.shutterOuter, { transform: [{ scale: shutterScale }] }]}>
+                <Animated.View style={[styles.shutterInner, { backgroundColor: shutterBg }]} />
+              </Animated.View>
+            </Pressable>
             <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
               <View style={styles.gallerySquare} />
             </TouchableOpacity>
