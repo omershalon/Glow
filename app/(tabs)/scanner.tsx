@@ -12,9 +12,12 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Animated } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTabTransition } from '@/hooks/useTabTransition';
 import { supabase } from '@/lib/supabase';
 import { Shadows } from '@/lib/theme';
+import ScreenBackground from '@/components/ScreenBackground';
 import type { Database } from '@/lib/database.types';
 import { PRODUCTS, PRODUCT_CATEGORIES, CATEGORY_META } from '@/lib/products';
 import type { Product, ProductCategory } from '@/lib/products';
@@ -30,6 +33,7 @@ const SEARCH_DEBOUNCE = 600;
 export default function ScannerScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { animatedStyle } = useTabTransition();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -188,7 +192,8 @@ export default function ScannerScreen() {
   for (const p of PRODUCTS) counts[p.category] = (counts[p.category] || 0) + 1;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Animated.View style={[styles.container, { paddingTop: insets.top }, animatedStyle]}>
+      <ScreenBackground preset="shop" />
       <View style={styles.header}>
         <Text style={styles.title}>Skin Shop</Text>
         <Text style={styles.subtitle}>Curated for skin health</Text>
@@ -302,15 +307,15 @@ export default function ScannerScreen() {
           </View>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAF8F5' },
+  container: { flex: 1, backgroundColor: '#08080F' },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
-  title: { fontSize: 30, fontWeight: '700', color: '#1C1C1A', letterSpacing: -0.4 },
-  subtitle: { fontSize: 14, color: '#9B9488', marginTop: 2 },
+  title: { fontSize: 30, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.4 },
+  subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.4)', marginTop: 2 },
   scroll: { flex: 1 },
   scrollInner: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 130 },
 

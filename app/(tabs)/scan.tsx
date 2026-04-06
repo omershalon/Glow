@@ -9,9 +9,8 @@ import {
   ActivityIndicator,
   Image,
   Dimensions,
-  Linking,
-  FlatList,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import Svg, { Path, Circle, Rect, Line, Polyline } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,9 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
+import ScreenBackground from '@/components/ScreenBackground';
 import type { SkinType, AcneType, Severity } from '@/lib/database.types';
-import { PRODUCTS } from '@/lib/products';
-import { cleanProductName } from '@/lib/clean-product-name';
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -137,6 +135,51 @@ function RedoIcon({ size = 22, color = '#FFFFFF' }: { size?: number; color?: str
       />
     </Svg>
   );
+}
+
+/* ── Result helpers ── */
+function buildScanTitle(r: AnalysisResult): string {
+  const sev = r.severity === 'mild' ? 'Mild' : r.severity === 'moderate' ? 'Moderate' : 'Severe';
+  if (r.skin_type === 'combination') return `${sev} acne with T-zone oiliness`;
+  if (r.skin_type === 'oily')       return `${sev} ${r.acne_type} acne with oily skin`;
+  if (r.skin_type === 'dry')        return `${sev} acne with dry, dehydrated skin`;
+  if (r.skin_type === 'sensitive')  return `${sev} acne on sensitive skin`;
+  return `${sev} ${r.acne_type} acne`;
+}
+
+function getOilLevel(s: SkinType): string {
+  if (s === 'oily') return 'High';
+  if (s === 'combination') return 'Medium';
+  return 'Low';
+}
+
+function getRednessLevel(a: AcneType): string {
+  if (a === 'cystic' || (a as string) === 'nodular') return 'High';
+  if ((a as string) === 'inflammatory' || (a as string) === 'papular' || (a as string) === 'pustular') return 'Medium';
+  return 'Low';
+}
+
+function getTipCategories(r: AnalysisResult) {
+  const isOily = r.skin_type === 'oily' || r.skin_type === 'combination';
+  const isDry  = r.skin_type === 'dry';
+  const routine = isOily ? [
+    'Keep your routine simple for 2 weeks',
+    'Avoid harsh scrubs and heavy oils',
+    'Only add stronger actives if skin stays calm',
+  ] : isDry ? [
+    'Start with a gentle cream cleanser',
+    'Layer hydration before any actives',
+    'Avoid alcohol-based toners',
+  ] : [
+    'Use non-comedogenic products only',
+    'Stick to one active ingredient at a time',
+    'Patch test everything new',
+  ];
+  return [
+    { label: 'Routine',     sublabel: 'What to use first',       items: routine },
+    { label: 'Food swaps',  sublabel: 'Easy changes to test',    items: ['Try less sugar in the morning', 'Test less dairy for 3–4 weeks', 'Add more water and omega-3 foods'] },
+    { label: 'Extras',      sublabel: '',                        items: ['Change your pillowcase every 2–3 days', isOily ? 'Blot rather than wash again mid-day' : 'Use a humidifier at night', 'Keep hands away from your face'] },
+  ];
 }
 
 export default function ScanScreen() {
@@ -469,6 +512,8 @@ export default function ScanScreen() {
 
   // ─── Analysis Results View ───
   return (
+    <View style={{ flex: 1 }}>
+    <ScreenBackground preset="scan" />
     <ScrollView
       style={styles.resultsScrollContainer}
       contentContainerStyle={[styles.resultsContent, { paddingTop: insets.top }]}
@@ -496,93 +541,103 @@ export default function ScanScreen() {
 
       {result && !analyzing && (
         <>
-          {/* Severity at top */}
-          <View style={styles.badgeRow}>
-            <View style={styles.severityBadge}>
-              <Text style={styles.severityBadgeText}>{SEVERITY_LABEL[result.severity]}</Text>
+          {/* ═══ PURPLE SCAN HERO CARD ═══ */}
+          <View style={styles.scanHeroCard}>
+            <LinearGradient
+              colors={['#4C1D95', '#6D28D9', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {/* Confidence badge */}
+            <View style={styles.scanHeroTop}>
+              <View style={styles.confidenceBadge}>
+                <View style={styles.confidenceDot} />
+                <Text style={styles.confidenceText}>
+                  confidence {result.confidence >= 0.75 ? 'high' : result.confidence >= 0.5 ? 'medium' : 'low'}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          {/* ═══ Photo Card ═══ */}
-          <View style={styles.photoCardWrapper}>
-            <Image source={{ uri: photoUri }} style={styles.scanPhoto} />
-          </View>
+            <Text style={styles.scanHeroLabel}>Today's scan result</Text>
+            <Text style={styles.scanHeroTitle}>{buildScanTitle(result)}</Text>
+            <Text style={styles.scanHeroDesc}>{result.analysis_notes}</Text>
 
-          {/* ═══ Chips row ═══ */}
-          <View style={styles.chipsRow}>
-            <View style={styles.typeChip}>
-              <Text style={styles.typeChipText}>
-                {SKIN_TYPE_CHIP_LABELS[result.skin_type] || result.skin_type}
-              </Text>
-            </View>
-            <View style={styles.typeChip}>
-              <Text style={styles.typeChipText}>
-                {result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1)} Acne
-              </Text>
-            </View>
-            <View style={styles.issuesBadge}>
-              <Text style={styles.issuesBadgeText}>{findings.length} issues found</Text>
-            </View>
-          </View>
-
-          <Text style={styles.profileSummary}>
-            Identified {findings.length} key skin issues needing care.
-          </Text>
-
-          {/* ═══ Issue Cards ═══ */}
-          <View style={styles.findingsSection}>
-            <Text style={styles.findingsSectionTitle}>
-              {findings.length} KEY FINDINGS
-            </Text>
-            {findings.map((finding, index) => (
-              <View key={index} style={styles.issueCardFull}>
-                <View style={styles.issueCardHeader}>
-                  <Text style={styles.issueCardTitle}>{finding.title}</Text>
-                  <View style={styles.fixableBadge}>
-                    <Text style={styles.fixableText}>Fixable</Text>
-                  </View>
+            {/* Metric pills */}
+            <View style={styles.metricPillsRow}>
+              {[
+                { label: 'Breakouts', value: result.severity.charAt(0).toUpperCase() + result.severity.slice(1) },
+                { label: 'Oil',       value: getOilLevel(result.skin_type) },
+                { label: 'Redness',   value: getRednessLevel(result.acne_type) },
+              ].map(m => (
+                <View key={m.label} style={styles.metricPill}>
+                  <Text style={styles.metricPillLabel}>{m.label}</Text>
+                  <Text style={styles.metricPillValue}>{m.value}</Text>
                 </View>
-                <Text style={styles.issueCardDesc}>{finding.description}</Text>
+              ))}
+            </View>
+
+            {/* Zone chips */}
+            {result.zones && Object.keys(result.zones).length > 0 && (
+              <View style={styles.zoneChipsRow}>
+                <Text style={styles.zonesLabel}>ZONES</Text>
+                <View style={styles.zoneChipsInner}>
+                  {Object.entries(result.zones).slice(0, 4).map(([zone, data]) => (
+                    <View key={zone} style={styles.zoneChip}>
+                      <View style={[styles.zoneChipDot, { backgroundColor: ZONE_SEVERITY_COLORS[data.severity] }]} />
+                      <Text style={styles.zoneChipText}>{zone.replace(/_/g, ' ')}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* ═══ YOUR SKIN'S GAME PLAN ═══ */}
+          <View style={styles.gamePlanSection}>
+            <Text style={styles.gamePlanTitle}>Your skin's game plan.</Text>
+            <Text style={styles.gamePlanSubtitle}>
+              A short coach summary built from your scan, so you know exactly what matters first and why.
+            </Text>
+            {findings.slice(0, 3).map((f, i) => (
+              <View key={i} style={styles.numberedItem}>
+                <View style={styles.numberCircle}>
+                  <Text style={styles.numberText}>{i + 1}</Text>
+                </View>
+                <View style={styles.numberedItemBody}>
+                  <Text style={styles.numberedItemTitle}>{f.title}</Text>
+                  <Text style={styles.numberedItemDesc}>{f.description}</Text>
+                </View>
               </View>
             ))}
           </View>
 
-          {/* ═══ Recommended Products ═══ */}
-          <View style={styles.recsSection}>
-            <Text style={styles.recsTitle}>Recommended Products</Text>
-            <FlatList
-              data={PRODUCTS.filter(p => p.category === 'Skincare').slice(0, 8)}
-              keyExtractor={item => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recsScroll}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.recCard}
-                  activeOpacity={0.88}
-                  onPress={() => {
-                    const url = item.asin
-                      ? `https://www.amazon.com/dp/${item.asin}`
-                      : `https://www.amazon.com/s?k=${encodeURIComponent(item.brand + ' ' + item.name)}`;
-                    Linking.openURL(url);
-                  }}
-                >
-                  {item.image_url ? (
-                    <Image source={{ uri: item.image_url }} style={styles.recImage} resizeMode="contain" />
-                  ) : (
-                    <View style={[styles.recImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F0E8' }]}>
-                      <Text style={{ fontSize: 24 }}>{'\u2728'}</Text>
-                    </View>
-                  )}
-                  <Text style={styles.recCategory}>{item.category}</Text>
-                  <Text style={styles.recName} numberOfLines={2}>{cleanProductName(item.name, item.brand)}</Text>
-                  {item.price ? <Text style={styles.recPrice}>{item.price}</Text> : null}
-                </TouchableOpacity>
-              )}
-            />
+          {/* ═══ MORE WAYS TO HELP ═══ */}
+          <View style={styles.moreWaysSection}>
+            <Text style={styles.moreWaysTitle}>More ways to help your skin</Text>
+            {getTipCategories(result).map((cat, ci) => (
+              <View key={ci} style={styles.tipCategory}>
+                <View style={styles.tipCategoryHeader}>
+                  <Text style={styles.tipCategoryLabel}>{cat.label}</Text>
+                  {cat.sublabel ? <Text style={styles.tipCategorySublabel}>{cat.sublabel}</Text> : null}
+                </View>
+                {cat.items.map((tip, ti) => (
+                  <View key={ti} style={styles.tipItem}>
+                    <Text style={styles.tipItemText}>{tip}</Text>
+                    <TouchableOpacity
+                      style={styles.tipOpenBtn}
+                      onPress={() => Alert.alert(cat.label, tip)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.tipOpenBtnText}>open</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ))}
           </View>
 
-          {/* CTA button */}
+          {/* CTA */}
           <TouchableOpacity
             style={[styles.ctaButton, (saving || generatingPlan) && styles.ctaDisabled]}
             onPress={saveSkinProfile}
@@ -590,11 +645,8 @@ export default function ScanScreen() {
             activeOpacity={0.85}
           >
             <Text style={styles.ctaButtonText}>
-              {saving ? 'Saving...' : generatingPlan ? 'Generating Plan...' : 'View your personalized plan'}
+              {saving ? 'Saving...' : generatingPlan ? 'Generating Plan...' : 'Save & view your personalized plan'}
             </Text>
-            {!saving && !generatingPlan && (
-              <Text style={styles.ctaPillars}>Products {'\u00B7'} Diet {'\u00B7'} Herbal {'\u00B7'} Lifestyle</Text>
-            )}
           </TouchableOpacity>
 
           {/* Bottom actions */}
@@ -622,6 +674,7 @@ export default function ScanScreen() {
         </View>
       )}
     </ScrollView>
+    </View>
   );
 }
 
@@ -790,7 +843,7 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: 38,
     borderWidth: 4,
-    borderColor: '#2D4A3E',
+    borderColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
@@ -1309,5 +1362,234 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textSecondary,
+  },
+
+  /* ── Scan hero card ── */
+  scanHeroCard: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    borderRadius: 24,
+    overflow: 'hidden',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xxl,
+    gap: 10,
+  },
+  scanHeroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  confidenceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  confidenceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34D399',
+  },
+  confidenceText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  scanHeroLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '500',
+  },
+  scanHeroTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 36,
+    letterSpacing: -0.5,
+  },
+  scanHeroDesc: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    lineHeight: 21,
+  },
+  metricPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  metricPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  metricPillLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  metricPillValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  zoneChipsRow: {
+    marginTop: 8,
+    gap: 8,
+  },
+  zonesLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 1.5,
+  },
+  zoneChipsInner: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  zoneChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  zoneChipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  zoneChipText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+
+  /* ── Game plan section ── */
+  gamePlanSection: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.xxl,
+    gap: Spacing.lg,
+  },
+  gamePlanTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  gamePlanSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+    marginTop: -4,
+  },
+  numberedItem: {
+    flexDirection: 'row',
+    gap: Spacing.lg,
+    alignItems: 'flex-start',
+  },
+  numberCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  numberText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  numberedItemBody: {
+    flex: 1,
+    gap: 4,
+  },
+  numberedItemTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    lineHeight: 22,
+  },
+  numberedItemDesc: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+  },
+
+  /* ── More ways section ── */
+  moreWaysSection: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.xxl,
+    gap: Spacing.xl,
+  },
+  moreWaysTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.2,
+  },
+  tipCategory: {
+    gap: 0,
+  },
+  tipCategoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  tipCategoryLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  tipCategorySublabel: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  tipItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: Spacing.md,
+  },
+  tipItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  tipOpenBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tipOpenBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
   },
 });

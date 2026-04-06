@@ -16,7 +16,9 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle, Path, Rect, Line } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
+import { useTabTransition } from '@/hooks/useTabTransition';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
+import ScreenBackground from '@/components/ScreenBackground';
 import type { Database, RankedItem, AcneType } from '@/lib/database.types';
 import PickDetailModal from '@/components/PickDetailModal';
 
@@ -189,6 +191,7 @@ function ProgressRing({ progress, size = 56, strokeWidth = 4 }: { progress: numb
 export default function PlanScreen() {
   const insets = useSafeAreaInsets();
   const router  = useRouter();
+  const { animatedStyle } = useTabTransition();
   const params = useLocalSearchParams<{ tab?: string }>();
 
   const [plan,         setPlan]         = useState<PersonalizedPlan | null>(null);
@@ -486,15 +489,17 @@ export default function PlanScreen() {
   /* ── empty / loading states ── */
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <Animated.View style={[styles.container, styles.centered, { paddingTop: insets.top }, animatedStyle]}>
+        <ScreenBackground preset="plan" />
         <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
+      </Animated.View>
     );
   }
 
   if (!plan || rankedItems.length === 0) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
+      <Animated.View style={[styles.container, styles.centered, { paddingTop: insets.top }, animatedStyle]}>
+        <ScreenBackground preset="plan" />
         <View style={styles.emptyIconWrap}>
           <ClipboardIcon size={52} color={Colors.textMuted} />
         </View>
@@ -522,13 +527,14 @@ export default function PlanScreen() {
             </Text>
           </LinearGradient>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     );
   }
 
   /* ── main UI ── */
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Animated.View style={[styles.container, { paddingTop: insets.top }, animatedStyle]}>
+      <ScreenBackground preset="plan" />
       {/* header */}
       <View style={styles.header}>
         {acneType && (
@@ -586,7 +592,7 @@ export default function PlanScreen() {
                     style={cardScale ? { transform: [{ scale: cardScale }] } : undefined}
                   >
                     <TouchableOpacity
-                      style={[styles.pickCard, { overflow: 'hidden' }, added && { backgroundColor: 'rgba(230, 245, 235, 1)', borderColor: 'rgba(76, 175, 135, 0.3)' }]}
+                      style={[styles.pickCard, { overflow: 'hidden' }, added && { backgroundColor: 'rgba(52, 211, 153, 0.12)', borderColor: 'rgba(52, 211, 153, 0.35)' }]}
                       onPress={() => setSelectedPick(item)}
                       activeOpacity={0.7}
                     >
@@ -785,7 +791,7 @@ export default function PlanScreen() {
         onToggleRoutine={toggleItem}
         isInRoutine={selectedPick ? routineRanks.has(selectedPick.impact_rank) : false}
       />
-    </View>
+    </Animated.View>
   );
 }
 
@@ -859,8 +865,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.pill,
     borderWidth: 1.5,
-    borderColor: Colors.borderLight,
-    backgroundColor: Colors.white,
+    borderColor: Colors.border,
+    backgroundColor: Colors.card,
   },
   filterChipActive: {
     borderColor: Colors.primary,
@@ -901,13 +907,13 @@ const styles = StyleSheet.create({
   pickCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.xl,
     paddingVertical: Spacing.lg,
     paddingLeft: Spacing.xl,
     paddingRight: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
   },
   pickCardBody: {
     flex: 1,
@@ -932,7 +938,7 @@ const styles = StyleSheet.create({
   },
   pickChevron: {
     fontSize: 22,
-    color: Colors.borderLight,
+    color: Colors.textMuted,
     fontWeight: '300',
   },
   circleBtn: {
@@ -961,7 +967,7 @@ const styles = StyleSheet.create({
 
   /* ── expanded panel ── */
   expandedPanel: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomLeftRadius: BorderRadius.xl,
     borderBottomRightRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.xl,
@@ -970,7 +976,7 @@ const styles = StyleSheet.create({
     marginTop: -Spacing.md,
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
     gap: Spacing.md,
   },
   expandedRationale: {

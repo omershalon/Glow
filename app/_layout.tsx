@@ -1,54 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useFonts } from 'expo-font';
+import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 
-function RootLayoutNav({ session }: { session: Session | null }) {
-  const segments = useSegments();
-  const router = useRouter();
-
-  useEffect(() => {
-    const inAuthGroup = segments[0] === '(auth)';
-    const inOnboarding = inAuthGroup && segments[1] === 'onboarding';
-
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (session && inAuthGroup && !inOnboarding) {
-      router.replace('/(tabs)');
-    }
-  }, [session, segments]);
-
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="product" options={{ presentation: 'card' }} />
-    </Stack>
-  );
-}
-
 export default function RootLayout() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [initialized, setInitialized] = useState(false);
-
+  const router   = useRouter();
+  const segments = useSegments();
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [fontsLoaded] = useFonts({
-    'NunitoSans-Regular': require('@expo-google-fonts/nunito-sans/400Regular/NunitoSans_400Regular.ttf'),
-    'NunitoSans-Medium': require('@expo-google-fonts/nunito-sans/500Medium/NunitoSans_500Medium.ttf'),
-    'NunitoSans-SemiBold': require('@expo-google-fonts/nunito-sans/600SemiBold/NunitoSans_600SemiBold.ttf'),
-    'NunitoSans-Bold': require('@expo-google-fonts/nunito-sans/700Bold/NunitoSans_700Bold.ttf'),
-    'NunitoSans-ExtraBold': require('@expo-google-fonts/nunito-sans/800ExtraBold/NunitoSans_800ExtraBold.ttf'),
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_600SemiBold,
+    DMSans_700Bold,
   });
 
   useEffect(() => {
+    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setInitialized(true);
     });
 
+    // Listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -56,14 +29,23 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (!initialized || !fontsLoaded) return null;
+  useEffect(() => {
+    if (session === undefined) return; // still loading initial session
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!session && !inAuthGroup) {
+      // Not logged in — send to login
+      router.replace('/(auth)/login');
+    } else if (session && inAuthGroup) {
+      // Logged in — send to app
+      router.replace('/(tabs)');
+    }
+  }, [session, segments]);
+
+  if (!fontsLoaded) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <RootLayoutNav session={session} />
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <Stack screenOptions={{ headerShown: false }} />
   );
 }

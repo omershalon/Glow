@@ -22,7 +22,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { useTabTransition } from '@/hooks/useTabTransition';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
+import ScreenBackground from '@/components/ScreenBackground';
 
 // ─── SVG Icon Components ────────────────────────────────────────────────────
 
@@ -113,6 +115,7 @@ const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 export default function ProgressScreen() {
   const insets = useSafeAreaInsets();
+  const { animatedStyle } = useTabTransition();
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -369,7 +372,8 @@ export default function ProgressScreen() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <Animated.View style={[styles.root, { paddingTop: insets.top }, animatedStyle]}>
+      <ScreenBackground preset="progress" />
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -913,7 +917,7 @@ export default function ProgressScreen() {
           </Animated.View>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

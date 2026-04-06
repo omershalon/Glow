@@ -27,7 +27,7 @@ file_size_limit = "50MiB"
 [auth]
 enabled = true
 site_url = "exp://localhost:8081"
-additional_redirect_urls = ["exp://localhost:8081", "glow://"]
+additional_redirect_urls = ["exp://localhost:8081", "exp://127.0.0.1:8081", "glow://*", "glow://reset-password", "https://wvejvinngszpsaqqzjqw.supabase.co/functions/v1/auth-redirect"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10

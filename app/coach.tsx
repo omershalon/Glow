@@ -15,10 +15,17 @@ import Svg, { Path, Line, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
+
+// expo-speech-recognition requires a custom dev build — not available in Expo Go.
+// Fall back to no-ops so the rest of the app still works.
+let ExpoSpeechRecognitionModule: any = null;
+let useSpeechRecognitionEvent: (event: string, handler: (...args: any[]) => void) => void = () => {};
+try {
+  const mod = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = mod.ExpoSpeechRecognitionModule;
+  useSpeechRecognitionEvent = mod.useSpeechRecognitionEvent;
+} catch (_) {}
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '@/lib/supabase';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 
@@ -306,9 +313,7 @@ export default function CoachScreen() {
             <Text style={styles.headerSubtitle}>AI skincare assistant</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => setVoiceMode(true)} style={styles.voiceModeBtn}>
-          <MicIcon size={18} color={Colors.primary} />
-        </TouchableOpacity>
+        <View style={styles.closeBtn} />
       </View>
 
       {/* Messages */}
@@ -344,11 +349,6 @@ export default function CoachScreen() {
               ))}
             </View>
 
-            {/* Voice mode CTA */}
-            <TouchableOpacity style={styles.voiceCta} onPress={() => setVoiceMode(true)} activeOpacity={0.85}>
-              <MicIcon size={18} color={Colors.white} />
-              <Text style={styles.voiceCtaText}>Talk to your Skin Coach</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -393,24 +393,37 @@ export default function CoachScreen() {
 
       {/* Input */}
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom + Spacing.sm }]}>
-        <TextInput
-          style={styles.textInput}
-          placeholder="Ask about your skin..."
-          placeholderTextColor={Colors.textMuted}
-          value={input}
-          onChangeText={setInput}
-          multiline
-          maxLength={500}
-          onSubmitEditing={() => sendMessage()}
-          blurOnSubmit={false}
-        />
+        <View style={styles.textInputWrapper}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Ask about your skin..."
+            placeholderTextColor={Colors.textMuted}
+            value={input}
+            onChangeText={setInput}
+            maxLength={500}
+            onSubmitEditing={() => sendMessage()}
+            returnKeyType="send"
+          />
+          <TouchableOpacity
+            style={styles.micBtn}
+            onPress={() => setVoiceMode(true)}
+            activeOpacity={0.8}
+          >
+            <MicIcon size={18} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           style={[styles.sendBtn, (!input.trim() || sending) && styles.sendBtnDisabled]}
           onPress={() => sendMessage()}
           disabled={!input.trim() || sending}
           activeOpacity={0.8}
         >
-          <SendIcon size={18} color={Colors.white} />
+          <LinearGradient
+            colors={[Colors.primaryLight, Colors.primary]}
+            style={styles.sendBtnGradient}
+          >
+            <SendIcon size={18} color={Colors.white} />
+          </LinearGradient>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -430,9 +443,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: Colors.border,
   },
   closeBtn: {
     width: 40,
@@ -458,7 +471,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#E8F5E9',
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -495,12 +510,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
   },
   suggestionChip: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.pill,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm + 2,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
   },
   suggestionText: {
     ...Typography.bodySmall,
@@ -541,10 +556,10 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   assistantBubble: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderColor: Colors.border,
   },
   typingBubble: {
     paddingVertical: Spacing.lg,
@@ -560,28 +575,38 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    borderTopColor: Colors.border,
     gap: Spacing.sm,
   },
   textInput: {
     flex: 1,
-    backgroundColor: Colors.background,
-    borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: 11,
     ...Typography.bodyMedium,
     color: Colors.text,
     maxHeight: 100,
   },
+  textInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.xl,
+  },
+  micBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    justifyContent: 'center', alignItems: 'center',
+    marginRight: 4,
+  },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center', alignItems: 'center',
+    overflow: 'hidden',
     marginBottom: 2,
   },
-  sendBtnDisabled: { opacity: 0.4 },
+  sendBtnDisabled: { opacity: 0.5 },
+  sendBtnGradient: { flex: 1, width: '100%', height: '100%', borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
 
   /* ═══ Voice Mode ═══ */
   voiceContainer: {
