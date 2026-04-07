@@ -528,7 +528,18 @@ export default function ScanScreen() {
               </Animated.View>
             </Pressable>
             <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
-              <View style={styles.gallerySquare} />
+              <Svg width={32} height={32} viewBox="0 0 100 100">
+                {/* Dark rounded background */}
+                <Rect x={0} y={0} width={100} height={100} rx={20} fill="#2A2A2A" />
+                {/* Sun */}
+                <Circle cx={32} cy={34} r={13} fill="#FFFFFF" />
+                {/* Mountains: right peak (tall, behind) */}
+                <Path d="M42 80 L68 36 L100 80 Z" fill="#FFFFFF" />
+                {/* Mountains: left peak (shorter, front) */}
+                <Path d="M0 80 L30 48 L58 80 Z" fill="#FFFFFF" />
+                {/* White bottom bar to fill below mountains */}
+                <Rect x={0} y={76} width={100} height={24} fill="#FFFFFF" />
+              </Svg>
             </TouchableOpacity>
           </View>
         </View>
@@ -883,7 +894,7 @@ const styles = StyleSheet.create({
   galleryButton: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',

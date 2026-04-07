@@ -69,13 +69,11 @@ async function searchOFF(base: string, query: string): Promise<Product[]> {
 export async function searchProducts(query: string): Promise<Product[]> {
   if (!query.trim() || query.trim().length < 2) return [];
 
-  // Search both databases in parallel
   const [beautyResults, foodResults] = await Promise.all([
     searchOFF(OFF_BEAUTY, query),
     searchOFF(OFF_FOOD, query),
   ]);
 
-  // Merge, deduplicate by name, cap at 15
   const seen = new Set<string>();
   const merged: Product[] = [];
 
@@ -85,6 +83,64 @@ export async function searchProducts(query: string): Promise<Product[]> {
     seen.add(key);
     merged.push(p);
     if (merged.length >= 15) break;
+  }
+
+  return merged;
+}
+
+const CATEGORY_QUERIES: Record<string, { base: string; query: string }[]> = {
+  Skincare: [
+    { base: OFF_BEAUTY, query: 'face moisturizer' },
+    { base: OFF_BEAUTY, query: 'serum skincare' },
+    { base: OFF_BEAUTY, query: 'cleanser face wash' },
+    { base: OFF_BEAUTY, query: 'sunscreen spf' },
+  ],
+  Supplements: [
+    { base: OFF_FOOD, query: 'collagen supplement' },
+    { base: OFF_FOOD, query: 'vitamin c skin' },
+    { base: OFF_FOOD, query: 'biotin supplement' },
+    { base: OFF_FOOD, query: 'omega skin supplement' },
+  ],
+  Foods: [
+    { base: OFF_FOOD, query: 'antioxidant skin food' },
+    { base: OFF_FOOD, query: 'green tea matcha' },
+    { base: OFF_FOOD, query: 'turmeric golden' },
+    { base: OFF_FOOD, query: 'berries superfood' },
+  ],
+  Herbal: [
+    { base: OFF_BEAUTY, query: 'herbal botanical extract' },
+    { base: OFF_FOOD, query: 'ashwagandha adaptogen' },
+    { base: OFF_FOOD, query: 'neem tea herbal' },
+    { base: OFF_BEAUTY, query: 'essential oil natural' },
+  ],
+  Accessories: [
+    { base: OFF_BEAUTY, query: 'jade roller gua sha' },
+    { base: OFF_BEAUTY, query: 'face brush cleansing tool' },
+    { base: OFF_BEAUTY, query: 'silk pillowcase hair skin' },
+    { base: OFF_BEAUTY, query: 'facial massage tool' },
+  ],
+};
+
+/**
+ * Fetch products for a given category from Open Beauty/Food Facts.
+ */
+export async function fetchByCategory(category: string): Promise<Product[]> {
+  const queries = CATEGORY_QUERIES[category];
+  if (!queries) return [];
+
+  const results = await Promise.all(queries.map(({ base, query }) => searchOFF(base, query)));
+  const flat = results.flat();
+
+  const seen = new Set<string>();
+  const merged: Product[] = [];
+
+  for (const p of flat) {
+    const key = p.name.toLowerCase().trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    p.category = category as ProductCategory;
+    merged.push(p);
+    if (merged.length >= 40) break;
   }
 
   return merged;

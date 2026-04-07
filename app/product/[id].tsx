@@ -1,18 +1,12 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Shadows } from '@/lib/theme';
 import { PRODUCTS, CATEGORY_META } from '@/lib/products';
 import type { Product } from '@/lib/products';
 import { cleanProductName } from '@/lib/clean-product-name';
-import { fetchIngredients } from '@/lib/fetch-ingredients';
-import type { IngredientInfo } from '@/lib/fetch-ingredients';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Categories that should show ingredients (consumable/topical products)
-const INGREDIENT_CATEGORIES = new Set(['Skincare', 'Supplements', 'Foods', 'Herbal']);
 
 // Composition tags — static for now, could come from scan data later
 const COMPOSITION_TAGS = [
@@ -30,28 +24,9 @@ export default function ProductDetailsScreen() {
   const params = useLocalSearchParams<{ id: string; data?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [ingredientFilter, setIngredientFilter] = useState<'all' | 'beneficial' | 'concerns'>('all');
-  const [expandedIngredient, setExpandedIngredient] = useState<number | null>(null);
-  const [ingredients, setIngredients] = useState<IngredientInfo[]>([]);
-  const [ingredientsLoading, setIngredientsLoading] = useState(false);
-
   const product: Product | null = params.data
     ? (() => { try { return JSON.parse(params.data) as Product; } catch { return null; } })()
     : PRODUCTS.find((p) => p.id === params.id) || null;
-
-  // Fetch real ingredients from Open Food/Beauty Facts
-  useEffect(() => {
-    if (!product || !INGREDIENT_CATEGORIES.has(product.category)) return;
-    setIngredientsLoading(true);
-    fetchIngredients({
-      barcode: product.asin || undefined, // asin isn't a barcode but try anyway
-      productName: product.name,
-      brand: product.brand,
-    })
-      .then(setIngredients)
-      .catch(() => setIngredients([]))
-      .finally(() => setIngredientsLoading(false));
-  }, [product?.id]);
 
   if (!product) {
     return (
@@ -63,18 +38,6 @@ export default function ProductDetailsScreen() {
       </View>
     );
   }
-
-  const showIngredients = INGREDIENT_CATEGORIES.has(product.category);
-  const beneficialCount = ingredients.filter(i => i.status === 'good').length;
-  const concernCount = ingredients.filter(i => i.status === 'concern').length;
-
-  const filteredIngredients = ingredients.filter(i => {
-    if (ingredientFilter === 'all') return true;
-    if (ingredientFilter === 'beneficial') return i.status === 'good';
-    return i.status === 'concern';
-  });
-
-  const concerns = ingredients.filter(i => i.status === 'concern');
 
   const amazonUrl = product.asin
     ? `https://www.amazon.com/dp/${product.asin}`
@@ -96,19 +59,8 @@ export default function ProductDetailsScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Safety Rating / Skin Match toggle */}
-        <View style={styles.toggle}>
-          <TouchableOpacity style={[styles.toggleTab, styles.toggleActive]} activeOpacity={0.8}>
-            <Text style={styles.toggleActiveText}>Safety Rating</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.toggleTab, styles.toggleInactive]} activeOpacity={0.8}>
-            <Text style={styles.toggleInactiveText}>Skin Match</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Product image */}
         <View style={styles.imageSection}>
-          <View style={styles.imageBg} />
           {product.image_url ? (
             <Image source={{ uri: product.image_url }} style={styles.productImage} resizeMode="contain" />
           ) : (
@@ -171,94 +123,7 @@ export default function ProductDetailsScreen() {
           </View>
         </View>
 
-        {/* ═══ Ingredient Concerns Card ═══ */}
-        {showIngredients && concerns.length > 0 && (
-          <View style={styles.concernsCard}>
-            <View style={styles.concernsHeader}>
-              <Text style={styles.concernsTitle}>Ingredient Concerns</Text>
-            </View>
-            {concerns.map(c => (
-              <View key={c.name} style={styles.concernItem}>
-                <View style={styles.concernDot}>
-                  <Text style={styles.concernX}>{'\u2715'}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.concernName}>{c.name}</Text>
-                  <Text style={styles.concernDetail}>{c.detail}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
 
-        {/* ═══ Ingredients List ═══ */}
-        {showIngredients && <View style={styles.ingredientsSection}>
-          <View style={styles.ingredientsHeader}>
-            <Text style={styles.ingredientsTitle}>Ingredients</Text>
-            <Text style={styles.ingredientsCount}>{ingredients.length} total</Text>
-          </View>
-
-          {/* Filter tabs */}
-          <View style={styles.filterRow}>
-            {[
-              { key: 'all' as const, label: `All (${ingredients.length})` },
-              { key: 'beneficial' as const, label: `Beneficial (${beneficialCount})` },
-              { key: 'concerns' as const, label: `Concerns (${concernCount})` },
-            ].map(f => (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.filterTab, ingredientFilter === f.key && styles.filterTabActive]}
-                onPress={() => setIngredientFilter(f.key)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.filterTabText, ingredientFilter === f.key && styles.filterTabTextActive]}>
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Loading state */}
-          {ingredientsLoading && (
-            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-              <Text style={{ fontSize: 13, color: '#9B9488', marginTop: 8 }}>Loading ingredients...</Text>
-            </View>
-          )}
-
-          {/* No ingredients found */}
-          {!ingredientsLoading && ingredients.length === 0 && (
-            <Text style={{ fontSize: 13, color: '#9B9488', fontStyle: 'italic', paddingVertical: 12 }}>
-              Ingredient data not available for this product.
-            </Text>
-          )}
-
-          {/* Ingredient cards */}
-          {filteredIngredients.map((ing, i) => (
-            <TouchableOpacity
-              key={`${ing.name}-${i}`}
-              style={styles.ingredientCard}
-              activeOpacity={0.8}
-              onPress={() => setExpandedIngredient(expandedIngredient === i ? null : i)}
-            >
-              <View style={styles.ingredientRow}>
-                <View style={[
-                  styles.ingredientDot,
-                  ing.status === 'good' ? styles.ingredientDotGood :
-                  ing.status === 'concern' ? styles.ingredientDotConcern :
-                  styles.ingredientDotNeutral,
-                ]} />
-                <Text style={styles.ingredientName}>{ing.name}</Text>
-                <Text style={styles.ingredientChevron}>
-                  {expandedIngredient === i ? '\u2303' : '\u2304'}
-                </Text>
-              </View>
-              {expandedIngredient === i && (
-                <Text style={styles.ingredientDetail}>{ing.detail}</Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>}
       </ScrollView>
     </View>
   );
@@ -270,7 +135,7 @@ const styles = StyleSheet.create({
 
   // Nav
   navBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
   },
   navBtn: {
@@ -278,8 +143,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
   },
   navBack: { fontSize: 28, color: Colors.white, marginTop: -2, fontWeight: '300' },
-  navTitle: { fontSize: 16, fontWeight: '600', color: Colors.white },
-  navRight: { flexDirection: 'row', gap: 8 },
+  navTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: Colors.white, textAlign: 'center' },
+  navRight: { width: 40 },
 
   // Scroll
   scroll: { flex: 1 },
@@ -293,17 +158,16 @@ const styles = StyleSheet.create({
   toggleTab: { flex: 1, paddingVertical: 14, borderRadius: 13, alignItems: 'center' },
   // Product image
   imageSection: {
-    alignItems: 'center', justifyContent: 'center',
-    height: SCREEN_WIDTH * 0.65, marginBottom: 16, position: 'relative',
+    width: '100%',
+    height: SCREEN_WIDTH * 0.72,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  imageBg: {
-    position: 'absolute',
-    width: SCREEN_WIDTH * 0.6, height: SCREEN_WIDTH * 0.5,
-    borderRadius: SCREEN_WIDTH * 0.25,
-    backgroundColor: Colors.primary, opacity: 0.12,
-    transform: [{ rotate: '-12deg' }],
-  },
-  productImage: { width: SCREEN_WIDTH * 0.42, height: SCREEN_WIDTH * 0.56 },
+  productImage: { width: '85%', height: '85%' },
   imageEmoji: { fontSize: 64 },
 
   // Brand row

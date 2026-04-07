@@ -127,7 +127,7 @@ export default function TabsLayout() {
   const segments = useSegments();
 
   const activeTab = (segments as string[])[1] as string | undefined;
-  const showFab   = activeTab !== 'scan';
+  const showFab   = activeTab !== 'scan' && activeTab !== 'scanner';
 
   return (
     <View style={{ flex: 1 }}>
