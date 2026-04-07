@@ -278,7 +278,7 @@ export default function OnboardingScreen() {
   return (
     <View style={styles.container}>
       {/* Progress header */}
-      <LinearGradient colors={[Colors.backgroundAlt, Colors.background]} style={styles.progressHeader}>
+      <LinearGradient colors={['#FFF0F5', '#FFE8F0']} style={styles.progressHeader}>
         <View style={styles.stepIndicator}>
           <Text style={styles.stepCount}>Step {currentStep} of {TOTAL_STEPS}</Text>
         </View>
@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.pill,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.white,
   },
   optionChipSelected: {
     borderColor: Colors.primary,
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1.5,
     borderColor: Colors.border,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.white,
     gap: Spacing.md,
   },
   listOptionSelected: {
@@ -516,9 +516,9 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     paddingTop: Spacing.lg,
     gap: Spacing.md,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.white,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: Colors.borderLight,
   },
   backNavButton: {
     height: 54,

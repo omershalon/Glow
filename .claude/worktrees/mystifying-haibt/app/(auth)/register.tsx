@@ -23,8 +23,6 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   const handleRegister = async () => {
     if (!fullName || !email || !password) {
@@ -82,7 +80,7 @@ export default function RegisterScreen() {
       >
         {/* Header */}
         <LinearGradient
-          colors={[Colors.backgroundAlt, Colors.background]}
+          colors={['#FFF0F5', '#FFE0ED']}
           style={styles.header}
         >
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -137,44 +135,34 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Password</Text>
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={[styles.input, styles.passwordInput, focusedField === 'password' && styles.inputFocused]}
-                placeholder="Min. 8 characters"
-                placeholderTextColor={Colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                onFocus={() => setFocusedField('password')}
-                onBlur={() => setFocusedField(null)}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.eyeText}>{showPassword ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={[styles.input, focusedField === 'password' && styles.inputFocused]}
+              placeholder="Min. 8 characters"
+              placeholderTextColor={Colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+            />
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Confirm Password</Text>
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={[
-                  styles.input, styles.passwordInput,
-                  focusedField === 'confirm' && styles.inputFocused,
-                  confirmPassword && confirmPassword !== password && styles.inputError,
-                ]}
-                placeholder="Re-enter password"
-                placeholderTextColor={Colors.textMuted}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showConfirm}
-                onFocus={() => setFocusedField('confirm')}
-                onBlur={() => setFocusedField(null)}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirm(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.eyeText}>{showConfirm ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={[
+                styles.input,
+                focusedField === 'confirm' && styles.inputFocused,
+                confirmPassword && confirmPassword !== password && styles.inputError,
+              ]}
+              placeholder="Re-enter password"
+              placeholderTextColor={Colors.textMuted}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+              onFocus={() => setFocusedField('confirm')}
+              onBlur={() => setFocusedField(null)}
+            />
             {confirmPassword && confirmPassword !== password && (
               <Text style={styles.errorText}>Passwords do not match</Text>
             )}
@@ -263,7 +251,7 @@ const styles = StyleSheet.create({
   },
   formSection: {
     flex: 1,
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.white,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: Spacing.xxl,
@@ -289,29 +277,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     ...Typography.bodyLarge,
     color: Colors.text,
-    backgroundColor: Colors.backgroundAlt,
+    backgroundColor: Colors.cardSubtle,
   },
   inputFocused: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.background,
-  },
-  passwordRow: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 60,
-  },
-  eyeBtn: {
-    position: 'absolute',
-    right: 16,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-  },
-  eyeText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
+    backgroundColor: Colors.white,
   },
   inputError: {
     borderColor: Colors.error,

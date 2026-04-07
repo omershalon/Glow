@@ -1,0 +1,283 @@
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions, Linking } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Shadows } from '@/lib/theme';
+import { PRODUCTS, CATEGORY_META } from '@/lib/products';
+import type { Product } from '@/lib/products';
+import { cleanProductName } from '@/lib/clean-product-name';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Composition tags — static for now, could come from scan data later
+const COMPOSITION_TAGS = [
+  { label: 'Vegan', good: true },
+  { label: 'Cruelty Free', good: true },
+  { label: 'Fragrance Free', good: true },
+  { label: 'Paraben Free', good: true },
+  { label: 'Silicone Free', good: true },
+  { label: 'Sulfate Free', good: true },
+];
+
+const KEY_BENEFITS = ['Hydration', 'Soothing', 'Anti-Aging', 'Barrier Repair'];
+
+export default function ProductDetailsScreen() {
+  const params = useLocalSearchParams<{ id: string; data?: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const product: Product | null = params.data
+    ? (() => { try { return JSON.parse(params.data) as Product; } catch { return null; } })()
+    : PRODUCTS.find((p) => p.id === params.id) || null;
+
+  if (!product) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 20, paddingTop: insets.top + 12 }}>
+          <Text style={{ fontSize: 16, color: Colors.primary, fontWeight: '600' }}>{'\u2039'} Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.errorText}>Product not found</Text>
+      </View>
+    );
+  }
+
+  const amazonUrl = product.asin
+    ? `https://www.amazon.com/dp/${product.asin}`
+    : `https://www.amazon.com/s?k=${encodeURIComponent((product.brand || '') + ' ' + product.name)}`;
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Nav bar */}
+      <View style={styles.navBar}>
+        <TouchableOpacity style={styles.navBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <Text style={styles.navBack}>{'\u2039'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.navTitle}>Product Details</Text>
+        <View style={styles.navRight} />
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Product image */}
+        <View style={styles.imageSection}>
+          {product.image_url ? (
+            <Image source={{ uri: product.image_url }} style={styles.productImage} resizeMode="contain" />
+          ) : (
+            <Text style={styles.imageEmoji}>{CATEGORY_META[product.category]?.emoji || '\u2728'}</Text>
+          )}
+        </View>
+
+        {/* Brand + category */}
+        <View style={styles.brandRow}>
+          <Text style={styles.brandName}>{product.brand}</Text>
+          {product.brand ? <Text style={styles.brandArrow}>{' \u203A'}</Text> : null}
+          <View style={styles.categoryChip}>
+            <Text style={styles.categoryChipText}>{product.category}</Text>
+          </View>
+        </View>
+
+        {/* Product name */}
+        <Text style={styles.productName}>{cleanProductName(product.name, product.brand || '')}</Text>
+
+        {/* Buy Online button */}
+        <TouchableOpacity style={styles.buyBtn} activeOpacity={0.85} onPress={() => Linking.openURL(amazonUrl)}>
+          <Text style={styles.buyText}>Buy Online</Text>
+        </TouchableOpacity>
+
+        {/* ═══ Product Snapshot Card ═══ */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Product Snapshot</Text>
+
+          {/* Key Benefits */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>KEY BENEFITS</Text>
+            </View>
+            <View style={styles.benefitsGrid}>
+              {KEY_BENEFITS.map(b => (
+                <View key={b} style={styles.benefitItem}>
+                  <Text style={styles.benefitText}>{b}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Composition */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>COMPOSITION</Text>
+            </View>
+            <View style={styles.compositionGrid}>
+              {COMPOSITION_TAGS.map(tag => (
+                <View key={tag.label} style={styles.compositionItem}>
+                  <View style={[styles.compositionDot, tag.good ? styles.dotGood : styles.dotBad]}>
+                    <Text style={styles.dotIcon}>{tag.good ? '\u2713' : '\u2715'}</Text>
+                  </View>
+                  <Text style={styles.compositionText}>
+                    {tag.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  errorText: { fontSize: 16, color: '#9B9488', textAlign: 'center', marginTop: 100 },
+
+  // Nav
+  navBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  navBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
+  },
+  navBack: { fontSize: 28, color: Colors.white, marginTop: -2, fontWeight: '300' },
+  navTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: Colors.white, textAlign: 'center' },
+  navRight: { width: 40 },
+
+  // Scroll
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20 },
+
+  // Toggle
+  toggle: {
+    flexDirection: 'row', backgroundColor: Colors.card,
+    borderRadius: 16, padding: 4, marginBottom: 16,
+  },
+  toggleTab: { flex: 1, paddingVertical: 14, borderRadius: 13, alignItems: 'center' },
+  // Product image
+  imageSection: {
+    width: '100%',
+    height: SCREEN_WIDTH * 0.72,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  productImage: { width: '85%', height: '85%' },
+  imageEmoji: { fontSize: 64 },
+
+  // Brand row
+  brandRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6,
+  },
+  brandName: {
+    fontSize: 13, fontWeight: '600', color: '#9B9488',
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  brandArrow: { fontSize: 16, color: '#9B9488', fontWeight: '300' },
+  categoryChip: {
+    backgroundColor: Colors.card, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
+  },
+  categoryChipText: { fontSize: 12, fontWeight: '500', color: '#9B9488' },
+
+  // Product name
+  productName: {
+    fontSize: 26, fontWeight: '700', color: Colors.white,
+    lineHeight: 32, marginBottom: 18,
+  },
+
+  toggleActive: { backgroundColor: Colors.primary, ...Shadows.xs },
+  toggleInactive: { backgroundColor: 'transparent' },
+  toggleActiveText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  toggleInactiveText: { fontSize: 14, fontWeight: '500', color: '#9B9488' },
+
+  // Buy button
+  buyBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16,
+    gap: 8, marginBottom: 20, ...Shadows.sm,
+  },
+  buyText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
+
+  // ═══ Product Snapshot Card ═══
+  card: {
+    backgroundColor: Colors.card, borderRadius: 20, padding: 20,
+    marginBottom: 16, ...Shadows.sm,
+  },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: Colors.white, marginBottom: 20 },
+
+  section: { marginBottom: 20 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9B9488', letterSpacing: 1.2 },
+
+  // Benefits
+  benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  benefitItem: { flexDirection: 'row', alignItems: 'center', width: '50%', gap: 8, marginBottom: 12 },
+  benefitText: { fontSize: 14, fontWeight: '500', color: Colors.white },
+
+  // Composition
+  compositionGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  compositionItem: { flexDirection: 'row', alignItems: 'center', width: '50%', gap: 8, marginBottom: 12 },
+  compositionDot: {
+    width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+  },
+  dotGood: { backgroundColor: '#E8F5E9' },
+  dotBad: { backgroundColor: '#FDEAEA' },
+  dotIcon: { fontSize: 11, fontWeight: '700', color: Colors.primary },
+  compositionText: { fontSize: 13, fontWeight: '500', color: Colors.white },
+
+  // ═══ Ingredient Concerns Card ═══
+  concernsCard: {
+    backgroundColor: Colors.card, borderRadius: 20, padding: 20,
+    marginBottom: 16, borderWidth: 1, borderColor: 'rgba(200,64,64,0.3)',
+  },
+  concernsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  concernsTitle: { fontSize: 16, fontWeight: '700', color: '#C84040' },
+  concernItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: 'rgba(200,64,64,0.1)', borderRadius: 14, padding: 16, marginBottom: 10,
+  },
+  concernDot: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(200,64,64,0.2)', alignItems: 'center', justifyContent: 'center',
+  },
+  concernX: { fontSize: 12, color: '#C84040', fontWeight: '700' },
+  concernName: { fontSize: 15, fontWeight: '600', color: '#C84040' },
+  concernDetail: { fontSize: 12, color: '#9B7070', marginTop: 4, lineHeight: 18 },
+
+  // ═══ Ingredients List ═══
+  ingredientsSection: { marginTop: 8 },
+  ingredientsHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14,
+  },
+  ingredientsTitle: { fontSize: 20, fontWeight: '700', color: Colors.white },
+  ingredientsCount: { fontSize: 13, color: '#9B9488' },
+
+  // Filter tabs
+  filterRow: {
+    flexDirection: 'row', backgroundColor: Colors.card, borderRadius: 12,
+    padding: 3, marginBottom: 16,
+  },
+  filterTab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  filterTabActive: { backgroundColor: Colors.backgroundAlt, ...Shadows.xs },
+  filterTabText: { fontSize: 12, fontWeight: '600', color: '#9B9488' },
+  filterTabTextActive: { color: Colors.white },
+
+  // Ingredient cards
+  ingredientCard: {
+    backgroundColor: Colors.card, borderRadius: 14,
+    padding: 16, marginBottom: 10, borderWidth: 1, borderColor: Colors.border,
+  },
+  ingredientRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ingredientDot: { width: 10, height: 10, borderRadius: 5 },
+  ingredientDotGood: { backgroundColor: '#4CAF87' },
+  ingredientDotConcern: { backgroundColor: '#E8A838' },
+  ingredientDotNeutral: { backgroundColor: '#C4BDB0' },
+  ingredientName: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.white },
+  ingredientChevron: { fontSize: 16, color: '#C4BDB0' },
+  ingredientDetail: { fontSize: 13, color: '#8A8A7A', lineHeight: 20, marginTop: 10, paddingLeft: 22 },
+});

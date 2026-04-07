@@ -12,7 +12,6 @@ import {
   Image,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import Svg, { Rect as SvgRect, Circle as SvgCircle, Path as SvgPath } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Animated } from 'react-native';
@@ -102,6 +101,7 @@ export default function ScannerScreen() {
       .single();
     if (profileRes.data) {
       setScansUsed(profileRes.data.product_scans_used || 0);
+      setSubscriptionTier(profileRes.data.subscription_tier as 'free' | 'premium');
     }
   }, []);
 
@@ -177,7 +177,14 @@ export default function ScannerScreen() {
   // Camera overlay
   if (scanning && permission?.granted) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <TouchableOpacity
+          style={[styles.backBtn, { top: insets.top + 12 }]}
+          onPress={() => { setScanning(false); setTorchOn(false); }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.backBtnText}>{'\u2039'}</Text>
+        </TouchableOpacity>
         <View style={styles.cameraContainer}>
           <CameraView
             style={styles.camera}
@@ -188,44 +195,33 @@ export default function ScannerScreen() {
             onBarcodeScanned={({ data }) => handleBarcodeScan(data)}
           />
           <View style={styles.scannerOverlay}>
-            <TouchableOpacity
-              style={[styles.backBtn, { top: insets.top + 16 }]}
-              onPress={() => setScanning(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.backBtnText}>{'\u2039'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.torchBtn, { top: insets.top + 16 }]}
-              onPress={() => setTorchOn(prev => !prev)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.torchCircle}>
-                <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-                  {/* Flashlight head / lens */}
-                  <SvgPath
-                    d="M8.5 4.5 C8.5 3 15.5 3 15.5 4.5 L16 7 H8 L8.5 4.5z"
-                    fill={torchOn ? '#FFD700' : '#8A8A8A'}
-                  />
-                  {/* Wide head ring */}
-                  <SvgRect x={7.5} y={7} width={9} height={2.5} rx={0.8} fill={torchOn ? '#FFD700' : '#8A8A8A'} />
-                  {/* Body - tapered */}
-                  <SvgPath
-                    d="M8.5 9.5 H15.5 L14.5 20 C14.5 21 9.5 21 9.5 20 L8.5 9.5z"
-                    fill={torchOn ? '#FFD700' : '#7A7A7A'}
-                  />
-                  {/* Button circle */}
-                  <SvgCircle cx={12} cy={15} r={1.5} fill={torchOn ? 'rgba(0,0,0,0.3)' : '#999999'} />
-                  <SvgCircle cx={12} cy={15} r={0.8} fill={torchOn ? 'rgba(255,255,255,0.5)' : '#AAAAAA'} />
-                </Svg>
-              </View>
-            </TouchableOpacity>
             <View style={styles.scannerFrame}>
               <View style={[styles.corner, { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 }]} />
               <View style={[styles.corner, { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 }]} />
               <View style={[styles.corner, { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 }]} />
               <View style={[styles.corner, { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 }]} />
             </View>
+            <TouchableOpacity
+              style={[styles.torchBtn, torchOn && styles.torchBtnOn]}
+              onPress={() => setTorchOn(prev => !prev)}
+              activeOpacity={0.7}
+            >
+              {/* Flashlight icon – matches iOS Control Center */}
+              <View style={styles.flashlightIcon}>
+                {/* Light rays */}
+                <View style={[styles.flashRay, styles.flashRayCenter, torchOn && styles.flashRayOn]} />
+                <View style={[styles.flashRay, styles.flashRayLeft, torchOn && styles.flashRayOn]} />
+                <View style={[styles.flashRay, styles.flashRayRight, torchOn && styles.flashRayOn]} />
+                {/* Lens / head */}
+                <View style={[styles.flashHead, torchOn && styles.flashPartOn]} />
+                {/* Body */}
+                <View style={[styles.flashBody, torchOn && styles.flashPartOn]} />
+                {/* Grip ring */}
+                <View style={[styles.flashGrip, torchOn && styles.flashPartOn]} />
+                {/* Base */}
+                <View style={[styles.flashBase, torchOn && styles.flashPartOn]} />
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -504,6 +500,69 @@ const styles = StyleSheet.create({
   scannerFrame: { width: 240, height: 140, position: 'relative' },
   corner: { position: 'absolute', width: 26, height: 26, borderColor: '#FFFFFF' },
   scanLabel: { fontSize: 14, color: '#FFFFFF', marginTop: 18, opacity: 0.85 },
+
+  // Torch / flashlight button
+  torchBtn: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 36,
+  },
+  torchBtnOn: {
+    backgroundColor: '#FFFFFF',
+  },
+  flashlightIcon: {
+    alignItems: 'center',
+    width: 22, height: 30,
+  },
+  // Rays
+  flashRay: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  flashRayOn: {
+    backgroundColor: '#1C1C1E',
+  },
+  flashRayCenter: {
+    width: 2, height: 5, top: 0, left: 10,
+    borderRadius: 1,
+  },
+  flashRayLeft: {
+    width: 2, height: 4, top: 2, left: 4,
+    borderRadius: 1,
+    transform: [{ rotate: '-30deg' }],
+  },
+  flashRayRight: {
+    width: 2, height: 4, top: 2, left: 16,
+    borderRadius: 1,
+    transform: [{ rotate: '30deg' }],
+  },
+  // Head (wider lens area)
+  flashHead: {
+    width: 14, height: 6, borderTopLeftRadius: 3, borderTopRightRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    marginTop: 6,
+  },
+  flashPartOn: {
+    backgroundColor: '#1C1C1E',
+  },
+  // Body
+  flashBody: {
+    width: 12, height: 10,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  // Grip ring
+  flashGrip: {
+    width: 14, height: 3,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 0.5,
+  },
+  // Base
+  flashBase: {
+    width: 10, height: 5,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderBottomLeftRadius: 3, borderBottomRightRadius: 3,
+  },
   backBtn: {
     position: 'absolute', left: 16, zIndex: 20,
     width: 40, height: 40, borderRadius: 20,
@@ -511,19 +570,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   backBtnText: { fontSize: 30, color: '#FFFFFF', fontWeight: '300', marginTop: -2 },
-  torchBtn: {
-    position: 'absolute', right: 16, zIndex: 20,
-    width: 56, height: 56, borderRadius: 28,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  torchCircle: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(40,40,40,0.75)',
-    borderWidth: 1, borderColor: 'rgba(180,180,180,0.3)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  torchBtnText: { fontSize: 20, color: 'rgba(255,255,255,0.6)' },
-  torchBtnActive: { color: '#FFD700' },
   cancelBtn: { position: 'absolute', bottom: 40, left: 0, right: 0, alignItems: 'center' },
   cancelText: {
     fontSize: 15, fontWeight: '600', color: '#FFFFFF',

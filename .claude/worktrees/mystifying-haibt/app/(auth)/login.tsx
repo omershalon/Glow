@@ -30,7 +30,6 @@ export default function LoginScreen() {
   const [password,     setPassword]     = useState('');
   const [loading,      setLoading]      = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
 
   const handleForgotPassword = async () => {
     if (!email) {
@@ -100,22 +99,17 @@ export default function LoginScreen() {
 
           <View style={s.fieldGroup}>
             <Text style={s.label}>Password</Text>
-            <View style={s.passwordRow}>
-              <TextInput
-                style={[s.input, s.passwordInput, focusedField === 'password' && s.inputFocused]}
-                placeholder="••••••••"
-                placeholderTextColor={Colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoComplete="password"
-                onFocus={() => setFocusedField('password')}
-                onBlur={() => setFocusedField(null)}
-              />
-              <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPassword(v => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={s.eyeText}>{showPassword ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={[s.input, focusedField === 'password' && s.inputFocused]}
+              placeholder="••••••••"
+              placeholderTextColor={Colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+            />
           </View>
 
           <TouchableOpacity style={s.forgotRow} onPress={handleForgotPassword}>
@@ -246,24 +240,6 @@ const s = StyleSheet.create({
   inputFocused: {
     borderColor: Colors.primary,
     backgroundColor: 'rgba(124,92,252,0.08)',
-  },
-  passwordRow: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 60,
-  },
-  eyeBtn: {
-    position: 'absolute',
-    right: 16,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-  },
-  eyeText: {
-    fontFamily: Fonts.semibold,
-    fontSize: 13,
-    color: Colors.primaryLight,
   },
   forgotRow: {
     alignSelf: 'flex-end',

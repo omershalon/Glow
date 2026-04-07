@@ -194,14 +194,14 @@ export default function ScanScreen() {
   const onShutterPressIn = useCallback(() => {
     Animated.parallel([
       Animated.spring(shutterScale, { toValue: 0.82, useNativeDriver: true, speed: 50, bounciness: 4 }),
-      Animated.timing(shutterFill,  { toValue: 1, duration: 200, useNativeDriver: false }),
+      Animated.timing(shutterFill,  { toValue: 1, duration: 120, useNativeDriver: false }),
     ]).start();
   }, []);
 
   const onShutterPressOut = useCallback(() => {
     Animated.parallel([
       Animated.spring(shutterScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 10 }),
-      Animated.timing(shutterFill,  { toValue: 0, duration: 300, useNativeDriver: false }),
+      Animated.timing(shutterFill,  { toValue: 0, duration: 200, useNativeDriver: false }),
     ]).start();
   }, []);
 
