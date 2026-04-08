@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import type { Product } from '@/lib/products';
 
 const STORAGE_KEY = '@skinx_favorites';
@@ -19,6 +20,7 @@ export function useFavorites() {
   }, []);
 
   const toggle = useCallback((product: Product) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setFavorites((prev) => {
       const exists = prev.some((p) => p.id === product.id);
       const updated = exists ? prev.filter((p) => p.id !== product.id) : [...prev, product];

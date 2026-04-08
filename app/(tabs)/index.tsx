@@ -13,9 +13,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Circle, Path, Rect, Polyline } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
 import { supabase } from '@/lib/supabase';
 import { Colors, BorderRadius, Spacing, Shadows, Fonts } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
+import { HomeSkeleton } from '@/components/SkeletonLoader';
 import { useTabTransition } from '@/hooks/useTabTransition';
 import type { Database, SkinType, Severity } from '@/lib/database.types';
 import { differenceInDays } from 'date-fns';
@@ -177,6 +179,17 @@ export default function HomeScreen() {
       </View>
     </View>
   );
+
+  /* ── Skeleton while loading ── */
+  if (!loaded) {
+    return (
+      <Animated.View style={[s.root, animatedStyle]}>
+        <ScreenBackground preset="home" />
+        <View style={{ paddingTop: insets.top + 12 }} />
+        <HomeSkeleton />
+      </Animated.View>
+    );
+  }
 
   /* ══════════════════════
      POST-SCAN DASHBOARD

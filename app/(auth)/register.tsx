@@ -13,7 +13,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import * as Haptics from 'expo-haptics';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
+import Svg, { Path, Circle } from 'react-native-svg';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -25,20 +27,25 @@ export default function RegisterScreen() {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [nameError, setNameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmError, setConfirmError] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const clearErrors = () => { setNameError(''); setEmailError(''); setPasswordError(''); setConfirmError(''); setFormError(''); };
 
   const handleRegister = async () => {
-    if (!fullName || !email || !password) {
-      Alert.alert('Missing fields', 'Please fill in all fields.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Password mismatch', 'Passwords do not match.');
-      return;
-    }
-    if (password.length < 8) {
-      Alert.alert('Weak password', 'Password must be at least 8 characters.');
-      return;
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    clearErrors();
+    let hasError = false;
+    if (!fullName) { setNameError('Name is required'); hasError = true; }
+    if (!email) { setEmailError('Email is required'); hasError = true; }
+    if (!password) { setPasswordError('Password is required'); hasError = true; }
+    else if (password.length < 8) { setPasswordError('Must be at least 8 characters'); hasError = true; }
+    if (password && confirmPassword && password !== confirmPassword) { setConfirmError('Passwords do not match'); hasError = true; }
+    else if (!confirmPassword) { setConfirmError('Please confirm your password'); hasError = true; }
+    if (hasError) return;
 
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
@@ -51,7 +58,7 @@ export default function RegisterScreen() {
 
     if (error) {
       setLoading(false);
-      Alert.alert('Registration failed', error.message);
+      setFormError(error.message);
       return;
     }
 
@@ -95,55 +102,62 @@ export default function RegisterScreen() {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Text style={styles.logoEmoji}>🌸</Text>
+              <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
+                <Circle cx={12} cy={8} r={4} stroke="#FFFFFF" strokeWidth={2} />
+                <Path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
+              </Svg>
             </LinearGradient>
-            <Text style={styles.headerTitle}>Join Glow</Text>
+            <Text style={styles.headerTitle}>Join SkinX</Text>
             <Text style={styles.headerSubtitle}>Start your skin transformation today</Text>
           </View>
         </LinearGradient>
 
         {/* Form */}
         <View style={styles.formSection}>
+          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Full Name</Text>
             <TextInput
-              style={[styles.input, focusedField === 'name' && styles.inputFocused]}
+              style={[styles.input, focusedField === 'name' && styles.inputFocused, nameError ? styles.inputError : null]}
               placeholder="Your name"
               placeholderTextColor={Colors.textMuted}
               value={fullName}
-              onChangeText={setFullName}
+              onChangeText={(t) => { setFullName(t); setNameError(''); }}
               autoCapitalize="words"
               autoComplete="name"
               onFocus={() => setFocusedField('name')}
               onBlur={() => setFocusedField(null)}
             />
+            {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Email</Text>
             <TextInput
-              style={[styles.input, focusedField === 'email' && styles.inputFocused]}
+              style={[styles.input, focusedField === 'email' && styles.inputFocused, emailError ? styles.inputError : null]}
               placeholder="your@email.com"
               placeholderTextColor={Colors.textMuted}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(t) => { setEmail(t); setEmailError(''); }}
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
               onFocus={() => setFocusedField('email')}
               onBlur={() => setFocusedField(null)}
             />
+            {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Password</Text>
             <View style={styles.passwordRow}>
               <TextInput
-                style={[styles.input, styles.passwordInput, focusedField === 'password' && styles.inputFocused]}
+                style={[styles.input, styles.passwordInput, focusedField === 'password' && styles.inputFocused, passwordError ? styles.inputError : null]}
                 placeholder="Min. 8 characters"
                 placeholderTextColor={Colors.textMuted}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => { setPassword(t); setPasswordError(''); }}
                 secureTextEntry={!showPassword}
                 onFocus={() => setFocusedField('password')}
                 onBlur={() => setFocusedField(null)}
@@ -152,6 +166,7 @@ export default function RegisterScreen() {
                 <Text style={styles.eyeText}>{showPassword ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
             </View>
+            {passwordError ? <Text style={styles.fieldError}>{passwordError}</Text> : null}
           </View>
 
           <View style={styles.inputContainer}>
@@ -161,12 +176,12 @@ export default function RegisterScreen() {
                 style={[
                   styles.input, styles.passwordInput,
                   focusedField === 'confirm' && styles.inputFocused,
-                  confirmPassword && confirmPassword !== password && styles.inputError,
+                  (confirmError || (confirmPassword && confirmPassword !== password)) ? styles.inputError : null,
                 ]}
                 placeholder="Re-enter password"
                 placeholderTextColor={Colors.textMuted}
                 value={confirmPassword}
-                onChangeText={setConfirmPassword}
+                onChangeText={(t) => { setConfirmPassword(t); setConfirmError(''); }}
                 secureTextEntry={!showConfirm}
                 onFocus={() => setFocusedField('confirm')}
                 onBlur={() => setFocusedField(null)}
@@ -175,8 +190,8 @@ export default function RegisterScreen() {
                 <Text style={styles.eyeText}>{showConfirm ? 'Hide' : 'Show'}</Text>
               </TouchableOpacity>
             </View>
-            {confirmPassword && confirmPassword !== password && (
-              <Text style={styles.errorText}>Passwords do not match</Text>
+            {(confirmError || (confirmPassword && confirmPassword !== password)) && (
+              <Text style={styles.fieldError}>{confirmError || 'Passwords do not match'}</Text>
             )}
           </View>
 
@@ -294,6 +309,25 @@ const styles = StyleSheet.create({
   inputFocused: {
     borderColor: Colors.primary,
     backgroundColor: Colors.background,
+  },
+  inputError: {
+    borderColor: Colors.error,
+  },
+  fieldError: {
+    ...Typography.caption,
+    color: Colors.error,
+    marginTop: Spacing.xs,
+  },
+  formError: {
+    ...Typography.labelMedium,
+    color: Colors.error,
+    textAlign: 'center',
+    backgroundColor: Colors.errorLight,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
   },
   passwordRow: {
     position: 'relative',

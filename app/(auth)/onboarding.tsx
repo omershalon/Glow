@@ -13,6 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import * as Haptics from 'expo-haptics';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -85,6 +86,7 @@ export default function OnboardingScreen() {
     list: string[],
     setList: (l: string[]) => void
   ) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (list.includes(item)) {
       setList(list.filter((i) => i !== item));
     } else {

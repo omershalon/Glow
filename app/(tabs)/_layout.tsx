@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react';
 import { Tabs, useSegments, useRouter } from 'expo-router';
 import { View, StyleSheet, TouchableOpacity, Animated, Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/lib/theme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -88,6 +89,7 @@ function AnimatedTabButton({ children, onPress, onLongPress, style, accessibilit
   const scale = useRef(new Animated.Value(1)).current;
 
   const onPressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.spring(scale, {
       toValue: 0.78,
       useNativeDriver: true,

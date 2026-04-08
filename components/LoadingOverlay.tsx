@@ -127,8 +127,8 @@ export function LoadingOverlay({
               </View>
             )}
 
-            {/* Glow branding */}
-            <Text style={styles.brandText}>glow</Text>
+            {/* SkinX branding */}
+            <Text style={styles.brandText}>SkinX</Text>
           </LinearGradient>
         </View>
       </Animated.View>

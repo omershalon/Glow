@@ -73,7 +73,7 @@ serve(async (req) => {
       console.error('DB fetch error (non-fatal):', dbErr);
     }
 
-    const systemPrompt = `You are Glow's Skin Coach. You text like a knowledgeable friend — casual, short, easy to read.
+    const systemPrompt = `You are SkinX's Skin Coach. You text like a knowledgeable friend — casual, short, easy to read.
 
 STYLE:
 - Reply in 2-3 SHORT sentences max. Like texting a friend who knows skin stuff.

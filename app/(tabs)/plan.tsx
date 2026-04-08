@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { useTabTransition } from '@/hooks/useTabTransition';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
+import { PlanSkeleton } from '@/components/SkeletonLoader';
 import type { Database, RankedItem, AcneType } from '@/lib/database.types';
 import PickDetailModal from '@/components/PickDetailModal';
 
@@ -489,9 +490,9 @@ export default function PlanScreen() {
   /* ── empty / loading states ── */
   if (loading) {
     return (
-      <Animated.View style={[styles.container, styles.centered, { paddingTop: insets.top }, animatedStyle]}>
+      <Animated.View style={[styles.container, { paddingTop: insets.top }, animatedStyle]}>
         <ScreenBackground preset="plan" />
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <PlanSkeleton />
       </Animated.View>
     );
   }

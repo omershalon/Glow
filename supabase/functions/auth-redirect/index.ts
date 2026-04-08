@@ -4,7 +4,7 @@ Deno.serve(() => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Glow — Reset Password</title>
+  <title>SkinX — Reset Password</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -88,11 +88,11 @@ Deno.serve(() => {
 <body>
   <div class="card">
     <div class="logo">✨</div>
-    <div class="brand">glow</div>
+    <div class="brand">SkinX</div>
     <h2>Reset Your Password</h2>
-    <p>Tap the button below to open the Glow app and set your new password.</p>
+    <p>Tap the button below to open the SkinX app and set your new password.</p>
 
-    <a id="app-btn" class="btn" href="#">Open Glow App</a>
+    <a id="app-btn" class="btn" href="#">Open SkinX App</a>
 
     <div class="status" id="status">Preparing link…</div>
 
@@ -124,7 +124,7 @@ Deno.serve(() => {
         + '&refresh_token=' + encodeURIComponent(refreshToken)
         + '&type=recovery';
 
-      const appLink = 'glow://reset-password#' + fragment;
+      const appLink = 'skinx://reset-password#' + fragment;
       appBtn.href = appLink;
 
       function updateExpoLink() {

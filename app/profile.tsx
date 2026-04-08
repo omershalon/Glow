@@ -15,6 +15,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import * as Haptics from 'expo-haptics';
+import Svg, { Path, Polyline } from 'react-native-svg';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 
 export default function ProfileScreen() {
@@ -50,6 +52,7 @@ export default function ProfileScreen() {
   }, []);
 
   const handleSaveName = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (!fullName.trim()) {
       Alert.alert('Required', 'Please enter a name.');
       return;
@@ -128,7 +131,10 @@ export default function ProfileScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Polyline points="15,18 9,12 15,6" stroke={Colors.primary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
           <View style={{ width: 60 }} />
@@ -148,7 +154,7 @@ export default function ProfileScreen() {
               >
                 <Text style={styles.avatarText}>{initials}</Text>
               </LinearGradient>
-              <Text style={styles.fullName}>{fullName || 'Glow User'}</Text>
+              <Text style={styles.fullName}>{fullName || 'SkinX User'}</Text>
               <Text style={styles.emailDisplay}>{email}</Text>
             </View>
 
@@ -198,9 +204,15 @@ export default function ProfileScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.cardTitle}>Change Password</Text>
-                <Text style={styles.toggleChevron}>
-                  {showPasswordSection ? '▲' : '▼'}
-                </Text>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                  <Polyline
+                    points={showPasswordSection ? '18,15 12,9 6,15' : '6,9 12,15 18,9'}
+                    stroke={Colors.textSecondary}
+                    strokeWidth={2.2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
               </TouchableOpacity>
 
               {showPasswordSection && (
@@ -298,7 +310,10 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   backBtn: {
-    width: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    width: 70,
     paddingVertical: Spacing.xs,
   },
   backText: {

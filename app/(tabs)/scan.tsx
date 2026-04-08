@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { differenceInWeeks } from 'date-fns';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import type { SkinType, AcneType, Severity } from '@/lib/database.types';
 
 
@@ -142,12 +143,13 @@ function RedoIcon({ size = 22, color = '#FFFFFF' }: { size?: number; color?: str
 
 /* ── Result helpers ── */
 function buildScanTitle(r: AnalysisResult): string {
-  const sev = r.severity === 'mild' ? 'Mild' : r.severity === 'moderate' ? 'Moderate' : 'Severe';
+  const sev = r.severity === 'mild' ? 'Mild' : r.severity === 'moderate' ? 'Moderate' : r.severity === 'severe' ? 'Severe' : 'Your';
+  const acne = r.acne_type || 'acne';
   if (r.skin_type === 'combination') return `${sev} acne with T-zone oiliness`;
-  if (r.skin_type === 'oily')       return `${sev} ${r.acne_type} acne with oily skin`;
+  if (r.skin_type === 'oily')       return `${sev} ${acne} acne with oily skin`;
   if (r.skin_type === 'dry')        return `${sev} acne with dry, dehydrated skin`;
   if (r.skin_type === 'sensitive')  return `${sev} acne on sensitive skin`;
-  return `${sev} ${r.acne_type} acne`;
+  return `${sev} ${acne} acne`;
 }
 
 function getOilLevel(s: SkinType): string {
@@ -207,6 +209,8 @@ export default function ScanScreen() {
   }, []);
 
   const shutterBg = shutterFill.interpolate({ inputRange: [0, 1], outputRange: ['#FFFFFF', '#7C5CFC'] });
+  const shutterInnerSize = shutterFill.interpolate({ inputRange: [0, 1], outputRange: [62, 72] });
+  const shutterInnerRadius = shutterFill.interpolate({ inputRange: [0, 1], outputRange: [31, 36] });
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -314,6 +318,15 @@ export default function ScanScreen() {
       if (error) throw error;
       const analysisResult: AnalysisResult = data;
 
+      // Validate that AI returned a proper face analysis
+      if (!analysisResult?.skin_type || !analysisResult?.severity || !analysisResult?.acne_type) {
+        Alert.alert(
+          'No face detected',
+          'Please upload a clear, well-lit photo of your face. Make sure your entire face is visible and avoid non-face images.'
+        );
+        return;
+      }
+
       setResult(analysisResult);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -322,8 +335,8 @@ export default function ScanScreen() {
     } catch (err) {
       console.error('Analysis error:', err);
       Alert.alert(
-        'Analysis failed',
-        'We could not analyze your photo. Please try again with better lighting.'
+        'No face detected',
+        'We couldn\'t detect a face in your photo. Please take a clear, well-lit selfie and try again.'
       );
     } finally {
       setAnalyzing(false);
@@ -472,9 +485,9 @@ export default function ScanScreen() {
     if (result.findings && result.findings.length > 0) return result.findings;
 
     // Otherwise build findings from analysis_notes + detected type
-    const acneLabel = result.acne_type.charAt(0).toUpperCase() + result.acne_type.slice(1);
-    const skinLabel = result.skin_type.charAt(0).toUpperCase() + result.skin_type.slice(1);
-    const sevLabel = result.severity.charAt(0).toUpperCase() + result.severity.slice(1);
+    const acneLabel = (result.acne_type || 'unknown').charAt(0).toUpperCase() + (result.acne_type || 'unknown').slice(1);
+    const skinLabel = (result.skin_type || 'unknown').charAt(0).toUpperCase() + (result.skin_type || 'unknown').slice(1);
+    const sevLabel = (result.severity || 'unknown').charAt(0).toUpperCase() + (result.severity || 'unknown').slice(1);
 
     // Split notes into sentences for descriptions
     const sentences = (result.analysis_notes || '').split(/[.!]\s+/).filter(s => s.trim().length > 8);
@@ -573,21 +586,14 @@ export default function ScanScreen() {
               onPressOut={onShutterPressOut}
             >
               <Animated.View style={[styles.shutterOuter, { transform: [{ scale: shutterScale }] }]}>
-                <Animated.View style={[styles.shutterInner, { backgroundColor: shutterBg }]} />
+                <Animated.View style={[styles.shutterInner, { backgroundColor: shutterBg, width: shutterInnerSize, height: shutterInnerSize, borderRadius: shutterInnerRadius }]} />
               </Animated.View>
             </Pressable>
             <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
-              <Svg width={32} height={32} viewBox="0 0 100 100">
-                {/* Dark rounded background */}
-                <Rect x={0} y={0} width={100} height={100} rx={20} fill="#2A2A2A" />
-                {/* Sun */}
-                <Circle cx={32} cy={34} r={13} fill="#FFFFFF" />
-                {/* Mountains: right peak (tall, behind) */}
-                <Path d="M42 80 L68 36 L100 80 Z" fill="#FFFFFF" />
-                {/* Mountains: left peak (shorter, front) */}
-                <Path d="M0 80 L30 48 L58 80 Z" fill="#FFFFFF" />
-                {/* White bottom bar to fill below mountains */}
-                <Rect x={0} y={76} width={100} height={24} fill="#FFFFFF" />
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                <Rect x={2} y={3} width={20} height={18} rx={3} stroke={Colors.white} strokeWidth={1.8} fill="none" />
+                <Circle cx={8.5} cy={9} r={2} fill={Colors.white} />
+                <Path d="M2 18 Q5 13 8 14 Q10 15 12 12 Q15 8 22 15 V18 Q22 21 19 21 L5 21 Q2 21 2 18 Z" fill={Colors.white} />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -615,15 +621,12 @@ export default function ScanScreen() {
       </View>
 
       {/* Analyzing overlay state */}
-      {analyzing && (
-        <View style={styles.analyzingCard}>
-          <ActivityIndicator size="large" color={Colors.secondary} />
-          <Text style={styles.analyzingTitle}>Analyzing your skin...</Text>
-          <Text style={styles.analyzingSubtext}>
-            Our AI is examining your skin type, acne patterns, and severity
-          </Text>
-        </View>
-      )}
+      <LoadingOverlay
+        visible={analyzing}
+        title="Analyzing your skin..."
+        subtitle="Our AI is examining your skin type, acne patterns, and severity"
+        steps={['Detecting skin type', 'Mapping acne zones', 'Assessing severity']}
+      />
 
       {result && !analyzing && (
         <>
@@ -635,32 +638,27 @@ export default function ScanScreen() {
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            {/* Confidence badge */}
-            <View style={styles.scanHeroTop}>
-              <View style={styles.confidenceBadge}>
-                <View style={styles.confidenceDot} />
-                <Text style={styles.confidenceText}>
-                  confidence {result.confidence >= 0.75 ? 'high' : result.confidence >= 0.5 ? 'medium' : 'low'}
-                </Text>
-              </View>
-            </View>
-
             <Text style={styles.scanHeroLabel}>Today's scan result</Text>
             <Text style={styles.scanHeroTitle}>{buildScanTitle(result)}</Text>
             <Text style={styles.scanHeroDesc}>{result.analysis_notes}</Text>
 
-            {/* Metric pills */}
-            <View style={styles.metricPillsRow}>
-              {[
-                { label: 'Breakouts', value: result.severity.charAt(0).toUpperCase() + result.severity.slice(1) },
-                { label: 'Oil',       value: getOilLevel(result.skin_type) },
-                { label: 'Redness',   value: getRednessLevel(result.acne_type) },
-              ].map(m => (
-                <View key={m.label} style={styles.metricPill}>
-                  <Text style={styles.metricPillLabel}>{m.label}</Text>
-                  <Text style={styles.metricPillValue}>{m.value}</Text>
-                </View>
-              ))}
+            {/* Photo + metrics row */}
+            <View style={styles.scanHeroPhotoMetricRow}>
+              {photoUri && (
+                <Image source={{ uri: photoUri }} style={styles.scanHeroPhoto} resizeMode="cover" />
+              )}
+              <View style={styles.metricPillsCol}>
+                {[
+                  { label: 'Breakouts', value: (result.severity || 'unknown').charAt(0).toUpperCase() + (result.severity || 'unknown').slice(1) },
+                  { label: 'Oil',       value: getOilLevel(result.skin_type) },
+                  { label: 'Redness',   value: getRednessLevel(result.acne_type) },
+                ].map(m => (
+                  <View key={m.label} style={styles.metricPill}>
+                    <Text style={styles.metricPillLabel}>{m.label}</Text>
+                    <Text style={styles.metricPillValue}>{m.value}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
 
             {/* Zone chips */}
@@ -710,13 +708,6 @@ export default function ScanScreen() {
                 {cat.items.map((tip, ti) => (
                   <View key={ti} style={styles.tipItem}>
                     <Text style={styles.tipItemText}>{tip}</Text>
-                    <TouchableOpacity
-                      style={styles.tipOpenBtn}
-                      onPress={() => Alert.alert(cat.label, tip)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.tipOpenBtnText}>open</Text>
-                    </TouchableOpacity>
                   </View>
                 ))}
               </View>
@@ -828,29 +819,29 @@ const styles = StyleSheet.create({
     borderColor: Colors.white,
   },
   cTL: {
-    top: 140,
-    left: 40,
+    top: 155,
+    left: 55,
     borderTopWidth: 3,
     borderLeftWidth: 3,
     borderTopLeftRadius: 4,
   },
   cTR: {
-    top: 140,
-    right: 40,
+    top: 155,
+    right: 55,
     borderTopWidth: 3,
     borderRightWidth: 3,
     borderTopRightRadius: 4,
   },
   cBL: {
     bottom: 190,
-    left: 40,
+    left: 55,
     borderBottomWidth: 3,
     borderLeftWidth: 3,
     borderBottomLeftRadius: 4,
   },
   cBR: {
     bottom: 190,
-    right: 40,
+    right: 55,
     borderBottomWidth: 3,
     borderRightWidth: 3,
     borderBottomRightRadius: 4,
@@ -1504,20 +1495,34 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.75)',
     lineHeight: 21,
   },
-  metricPillsRow: {
+  scanHeroPhotoMetricRow: {
     flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
+    gap: 12,
+    alignItems: 'stretch',
     marginTop: 4,
+  },
+  scanHeroPhoto: {
+    width: 120,
+    height: 140,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  metricPillsCol: {
+    flex: 1,
+    justifyContent: 'space-between',
+    gap: 8,
   },
   metricPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 6,
     backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    flex: 1,
   },
   metricPillLabel: {
     fontSize: 13,
