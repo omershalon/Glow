@@ -12,3 +12,4 @@ dist/
 web-build/
 .env.local
 assets/products/
+.superpowers/
