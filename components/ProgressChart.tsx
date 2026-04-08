@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     height: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
     borderRadius: 12,
   },
   insufficientText: {

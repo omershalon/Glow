@@ -20,8 +20,8 @@ async function computeStreak(userId: string): Promise<number> {
   ]);
 
   const allDates = [
-    ...((scans.data ?? []).map(r => new Date(r.created_at))),
-    ...((photos.data ?? []).map(r => new Date(r.created_at))),
+    ...((scans.data as { created_at: string }[] ?? []).map(r => new Date(r.created_at))),
+    ...((photos.data as { created_at: string }[] ?? []).map(r => new Date(r.created_at))),
   ];
 
   if (allDates.length === 0) return 0;
