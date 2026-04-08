@@ -22,6 +22,8 @@ import ScreenBackground from '@/components/ScreenBackground';
 import { PlanSkeleton } from '@/components/SkeletonLoader';
 import type { Database, RankedItem, AcneType } from '@/lib/database.types';
 import PickDetailModal from '@/components/PickDetailModal';
+import ParticleBurst, { ParticleBurstHandle } from '@/components/ParticleBurst';
+import GlowRingPulse, { GlowRingPulseHandle } from '@/components/GlowRingPulse';
 
 type PersonalizedPlan = Database['public']['Tables']['personalized_plans']['Row'];
 type Tab = 'picks' | 'routine';
@@ -231,6 +233,27 @@ export default function PlanScreen() {
 
   const toastAnim  = useRef(new Animated.Value(0)).current;
 
+  // Tip stagger anims — keyed by impact_rank
+  const tipAnimsRef = useRef<Record<number, { opacity: Animated.Value; translateY: Animated.Value }>>({}).current;
+
+  const getOrCreateTipAnim = (rank: number) => {
+    if (!tipAnimsRef[rank]) {
+      tipAnimsRef[rank] = {
+        opacity:    new Animated.Value(0),
+        translateY: new Animated.Value(16),
+      };
+    }
+    return tipAnimsRef[rank];
+  };
+
+  // Shimmer for routine tab
+  const shimmerAnim   = useRef(new Animated.Value(0)).current;
+  const shimmerRanRef = useRef(false);
+
+  // Particle burst and glow ring refs
+  const burstRef = useRef<ParticleBurstHandle>(null);
+  const glowRef  = useRef<GlowRingPulseHandle>(null);
+
   // Confetti
   const CONFETTI_COUNT = 30;
   const CONFETTI_COLORS = ['#C8573E', '#2D4A3E', '#C8A050', '#4CAF87', '#7CB9E8', '#E8547A'];
@@ -312,6 +335,38 @@ export default function PlanScreen() {
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
   useEffect(() => { if (params.tab === 'picks') setActiveTab('picks'); }, [params.tab]);
+
+  // Fire stagger when picks tab becomes active and items are loaded
+  const prevTabRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeTab !== 'picks' || loading) return;
+    if (prevTabRef.current === 'picks') return;
+    prevTabRef.current = 'picks';
+
+    const rankedItems: RankedItem[] = (plan?.ranked_items as unknown as RankedItem[]) ?? [];
+    const allAnims = rankedItems.map(item => {
+      const a = getOrCreateTipAnim(item.impact_rank);
+      a.opacity.setValue(0);
+      a.translateY.setValue(16);
+      return Animated.parallel([
+        Animated.timing(a.opacity,    { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.spring(a.translateY, { toValue: 0, tension: 60, friction: 8, useNativeDriver: true }),
+      ]);
+    });
+
+    Animated.stagger(50, allAnims).start();
+  }, [activeTab, loading, plan]);
+
+  // Shimmer effect for routine tab on first load
+  useEffect(() => {
+    if (activeTab !== 'routine' || shimmerRanRef.current) return;
+    shimmerRanRef.current = true;
+    Animated.timing(shimmerAnim, {
+      toValue: 1,
+      duration: 900,
+      useNativeDriver: true,
+    }).start();
+  }, [activeTab]);
 
   /* ── toast ── */
   const showToast = () => {
@@ -401,6 +456,9 @@ export default function PlanScreen() {
         setRoutineRanks((p) => new Set([...p, item.impact_rank]));
         setRoutineIdMap((p) => ({ ...p, [item.impact_rank]: data.id as string }));
         showToast();
+        burstRef.current?.trigger();
+        glowRef.current?.trigger();
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     }
   };
@@ -587,10 +645,11 @@ export default function PlanScreen() {
                 const added = routineRanks.has(item.impact_rank);
                 const cardScale = cardScaleAnims[item.impact_rank];
                 const bubbles = getBubbles(item.impact_rank);
+                const tipAnim = getOrCreateTipAnim(item.impact_rank);
                 return (
                   <Animated.View
                     key={item.impact_rank}
-                    style={cardScale ? { transform: [{ scale: cardScale }] } : undefined}
+                    style={{ opacity: tipAnim.opacity, transform: [{ translateY: tipAnim.translateY }, ...(cardScale ? [{ scale: cardScale }] : [])] }}
                   >
                     <TouchableOpacity
                       style={[styles.pickCard, { overflow: 'hidden' }, added && { backgroundColor: 'rgba(52, 211, 153, 0.12)', borderColor: 'rgba(52, 211, 153, 0.35)' }]}
@@ -711,26 +770,34 @@ export default function PlanScreen() {
               {items.map((item) => {
                 const done = doneToday.has(item.impact_rank);
                 return (
-                  <View key={item.impact_rank} style={styles.routineCard}>
-                    <TouchableOpacity
-                      style={styles.routineCardInner}
-                      onPress={() => toggleDone(item.impact_rank)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[styles.checkbox, done && styles.checkboxDone]}>
-                        {done && <Text style={styles.checkmark}>✓</Text>}
-                      </View>
-                      <Text style={[styles.routineItemTitle, done && styles.routineItemTitleDone]}>
-                        {item.title}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => toggleItem(item)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.removeIcon}>×</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <Animated.View
+                    key={item.impact_rank}
+                    style={{
+                      opacity: shimmerAnim,
+                      transform: [{ translateX: shimmerAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
+                    }}
+                  >
+                    <View style={styles.routineCard}>
+                      <TouchableOpacity
+                        style={styles.routineCardInner}
+                        onPress={() => toggleDone(item.impact_rank)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.checkbox, done && styles.checkboxDone]}>
+                          {done && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={[styles.routineItemTitle, done && styles.routineItemTitleDone]}>
+                          {item.title}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => toggleItem(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.removeIcon}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -791,6 +858,8 @@ export default function PlanScreen() {
         onToggleRoutine={toggleItem}
         isInRoutine={selectedPick ? routineRanks.has(selectedPick.impact_rank) : false}
       />
+      <ParticleBurst ref={burstRef} />
+      <GlowRingPulse ref={glowRef} />
     </Animated.View>
   );
 }
