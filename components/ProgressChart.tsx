@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { Colors, Typography, Spacing } from '@/lib/theme';
 
@@ -20,6 +20,17 @@ export function ProgressChart({ data, height = 200 }: ProgressChartProps) {
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
   const chartWidth = SCREEN_WIDTH - 48 - 32; // screen - padding - card padding
   const chartHeight = height;
+
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    progressAnim.setValue(0);
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: false, // drives SVG width, needs JS driver
+    }).start();
+  }, [data]);
 
   if (data.length < 2) {
     return (
@@ -96,77 +107,87 @@ export function ProgressChart({ data, height = 200 }: ProgressChartProps) {
     minY + (yRange * i) / (yTicks - 1)
   );
 
+  // Animated clip width
+  const clipWidth = progressAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: [0, chartWidth],
+  });
+
   return (
     <View style={styles.container}>
-      <Svg width={chartWidth} height={chartHeight}>
-        <Defs>
-          <SvgLinearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={Colors.primary} stopOpacity="0.3" />
-            <Stop offset="1" stopColor={Colors.primary} stopOpacity="0.02" />
-          </SvgLinearGradient>
-        </Defs>
+      <View style={{ position: 'relative', width: chartWidth, height: chartHeight }}>
+        <Svg width={chartWidth} height={chartHeight}>
+          <Defs>
+            <SvgLinearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={Colors.primary} stopOpacity="0.3" />
+              <Stop offset="1" stopColor={Colors.primary} stopOpacity="0.02" />
+            </SvgLinearGradient>
+          </Defs>
 
-        {/* Grid lines */}
-        {yTickValues.map((val, i) => {
-          const y = scaleY(val);
-          return (
-            <React.Fragment key={i}>
-              <Line
-                x1={CHART_PADDING.left}
-                y1={y}
-                x2={chartWidth - CHART_PADDING.right}
-                y2={y}
-                stroke={Colors.borderLight}
-                strokeWidth={1}
-                strokeDasharray="4 4"
-              />
-              <SvgText
-                x={CHART_PADDING.left - 6}
-                y={y + 4}
-                fontSize={10}
-                fill={Colors.textMuted}
-                textAnchor="end"
-              >
-                {val.toFixed(1)}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
+          {/* Grid lines */}
+          {yTickValues.map((val, i) => {
+            const y = scaleY(val);
+            return (
+              <React.Fragment key={i}>
+                <Line
+                  x1={CHART_PADDING.left}
+                  y1={y}
+                  x2={chartWidth - CHART_PADDING.right}
+                  y2={y}
+                  stroke={Colors.borderLight}
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                />
+                <SvgText
+                  x={CHART_PADDING.left - 6}
+                  y={y + 4}
+                  fontSize={10}
+                  fill={Colors.textMuted}
+                  textAnchor="end"
+                >
+                  {val.toFixed(1)}
+                </SvgText>
+              </React.Fragment>
+            );
+          })}
 
-        {/* Area fill */}
-        <Path d={fillPath} fill="url(#areaGradient)" />
+          {/* Area fill — always visible */}
+          <Path d={fillPath} fill="url(#areaGradient)" />
+        </Svg>
 
-        {/* Line */}
-        <Path
-          d={linePath}
-          stroke={Colors.primary}
-          strokeWidth={2.5}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Data points and labels */}
-        {data.map((point, i) => {
-          const cx = scaleX(i);
-          const cy = scaleY(point.y);
-          return (
-            <React.Fragment key={i}>
-              <Circle cx={cx} cy={cy} r={5} fill={Colors.white} stroke={Colors.primary} strokeWidth={2} />
-              <Circle cx={cx} cy={cy} r={2.5} fill={Colors.primary} />
-              <SvgText
-                x={cx}
-                y={chartHeight - 4}
-                fontSize={10}
-                fill={Colors.textMuted}
-                textAnchor="middle"
-              >
-                {point.label}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
-      </Svg>
+        {/* Animated clip group for line + dots */}
+        <Animated.View style={{ width: clipWidth, height: chartHeight, overflow: 'hidden', position: 'absolute', top: 0, left: 0 }}>
+          <Svg width={chartWidth} height={chartHeight}>
+            <Path
+              d={linePath}
+              stroke={Colors.primary}
+              strokeWidth={2.5}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {data.map((point, i) => {
+              const cx = scaleX(i);
+              const cy = scaleY(point.y);
+              return (
+                <React.Fragment key={i}>
+                  <Circle cx={cx} cy={cy} r={5} fill={Colors.white} stroke={Colors.primary} strokeWidth={2} />
+                  <Circle cx={cx} cy={cy} r={2.5} fill={Colors.primary} />
+                  <SvgText
+                    x={cx}
+                    y={chartHeight - 4}
+                    fontSize={10}
+                    fill={Colors.textMuted}
+                    textAnchor="middle"
+                  >
+                    {point.label}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+          </Svg>
+        </Animated.View>
+      </View>
 
       {/* Legend */}
       <View style={styles.legend}>
