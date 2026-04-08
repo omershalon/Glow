@@ -628,7 +628,6 @@ export default function PlanScreen() {
                         <Text style={styles.pickSubtitle} numberOfLines={1}>{item.rationale}</Text>
                       </View>
                       <View style={styles.pickCardRight}>
-                        <Text style={styles.pickChevron}>{'›'}</Text>
                         <TouchableOpacity
                           style={[styles.circleBtn, added && styles.circleBtnAdded]}
                           onPress={() => toggleItem(item)}
