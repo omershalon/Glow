@@ -15,9 +15,11 @@ const ParticleBurst = forwardRef<ParticleBurstHandle>((_, ref) => {
     pos: new Animated.ValueXY({ x: 0, y: 0 }),
     opacity: new Animated.Value(0),
   }))).current;
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useImperativeHandle(ref, () => ({
     trigger() {
+      animRef.current?.stop();
       // Reset all
       anims.forEach(a => {
         a.pos.setValue({ x: 0, y: 0 });
@@ -45,7 +47,8 @@ const ParticleBurst = forwardRef<ParticleBurstHandle>((_, ref) => {
         ]);
       });
 
-      Animated.stagger(18, animations).start();
+      animRef.current = Animated.stagger(18, animations);
+      animRef.current.start();
     },
   }));
 
