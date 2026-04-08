@@ -1,10 +1,11 @@
+import { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Filter, FeTurbulence, Rect } from 'react-native-svg';
 
 type Preset = 'home' | 'plan' | 'scan' | 'progress' | 'shop';
 
-export default function ScreenBackground({ preset: _ }: { preset: Preset }) {
+const ScreenBackground = memo(function ScreenBackground({ preset: _ }: { preset: Preset }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <LinearGradient
@@ -22,4 +23,6 @@ export default function ScreenBackground({ preset: _ }: { preset: Preset }) {
       </Svg>
     </View>
   );
-}
+});
+
+export default ScreenBackground;
