@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { Colors, BorderRadius, Spacing, Shadows, Fonts } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
 import { HomeSkeleton } from '@/components/SkeletonLoader';
 import { useTabTransition } from '@/hooks/useTabTransition';
+import StreakCounter from '@/components/StreakCounter';
 import type { Database, SkinType, Severity } from '@/lib/database.types';
 import { differenceInDays } from 'date-fns';
 
@@ -129,6 +130,37 @@ export default function HomeScreen() {
   const [refreshing,   setRefreshing]   = useState(false);
   const [loaded,       setLoaded]       = useState(false);
 
+  // ── Entrance stagger anims ──
+  const cardAnims = useRef(
+    Array.from({ length: 5 }, () => ({
+      opacity:     new Animated.Value(0),
+      translateY:  new Animated.Value(18),
+    }))
+  ).current;
+
+  // Hero glow breathing anim
+  const heroGlowOpacity = useRef(new Animated.Value(0.4)).current;
+  const heroGlowLoop    = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Stat count-up
+  const severityAnim = useRef(new Animated.Value(0)).current;
+  const [displayScore, setDisplayScore] = useState(0);
+
+  // Button spring scales
+  const quickScales = useRef([
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+  ]).current;
+
+  const springPress   = (anim: Animated.Value) => Animated.spring(anim, { toValue: 0.94, tension: 120, friction: 8, useNativeDriver: true }).start();
+  const springRelease = (anim: Animated.Value) => Animated.spring(anim, { toValue: 1,    tension: 120, friction: 8, useNativeDriver: true }).start();
+
+  useEffect(() => {
+    const id = severityAnim.addListener(({ value }) => setDisplayScore(Math.round(value)));
+    return () => severityAnim.removeListener(id);
+  }, [severityAnim]);
+
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -148,6 +180,37 @@ export default function HomeScreen() {
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    // Stagger cards in
+    Animated.stagger(60,
+      cardAnims.map(a =>
+        Animated.parallel([
+          Animated.timing(a.opacity,    { toValue: 1,  duration: 400, useNativeDriver: true }),
+          Animated.spring(a.translateY, { toValue: 0,  tension: 60, friction: 8, useNativeDriver: true }),
+        ])
+      )
+    ).start();
+
+    // Hero glow breathing loop
+    heroGlowLoop.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(heroGlowOpacity, { toValue: 0.8, duration: 1500, useNativeDriver: true }),
+        Animated.timing(heroGlowOpacity, { toValue: 0.4, duration: 1500, useNativeDriver: true }),
+      ])
+    );
+    heroGlowLoop.current.start();
+
+    // Stat count-up
+    if (skinProfile?.severity) {
+      const target = skinProfile.severity === 'mild' ? 3 : skinProfile.severity === 'moderate' ? 6 : 9;
+      Animated.timing(severityAnim, { toValue: target, duration: 800, useNativeDriver: false }).start();
+    }
+
+    return () => { heroGlowLoop.current?.stop(); };
+  }, [loaded, skinProfile]);
 
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -210,117 +273,159 @@ export default function HomeScreen() {
         >
           {Header}
 
+          <Animated.View style={[{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }, { paddingHorizontal: 20, paddingBottom: 12 }]}>
+            <StreakCounter />
+          </Animated.View>
+
           {/* ── Scan Result Hero Card ── */}
-          <TouchableOpacity activeOpacity={0.92} onPress={() => router.push('/(tabs)/scan')}>
-            <LinearGradient
-              colors={['#3B1FA3', '#1E0F5C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={s.scanCard}
-            >
-              {/* Top badges */}
-              <View style={s.scanCardTop}>
-                <View style={s.confidenceBadge}>
-                  <View style={s.confidenceDot} />
-                  <Text style={s.confidenceText}>confidence high</Text>
+          <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
+            <TouchableOpacity activeOpacity={0.92} onPress={() => router.push('/(tabs)/scan')}>
+              <LinearGradient
+                colors={['#3B1FA3', '#1E0F5C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={s.scanCard}
+              >
+                <Animated.View
+                  pointerEvents="none"
+                  style={[s.heroInnerGlow, { opacity: heroGlowOpacity }]}
+                />
+
+                {/* Top badges */}
+                <View style={s.scanCardTop}>
+                  <View style={s.confidenceBadge}>
+                    <View style={s.confidenceDot} />
+                    <Text style={s.confidenceText}>confidence high</Text>
+                  </View>
+                  {scanAgoLabel && (
+                    <Text style={s.scanAgoText}>{scanAgoLabel}</Text>
+                  )}
                 </View>
-                {scanAgoLabel && (
-                  <Text style={s.scanAgoText}>{scanAgoLabel}</Text>
-                )}
-              </View>
 
-              {/* Label */}
-              <Text style={s.scanCardLabel}>Today's scan result</Text>
+                {/* Label */}
+                <Text style={s.scanCardLabel}>Today's scan result</Text>
 
-              {/* Condition title */}
-              <Text style={s.scanCardTitle}>
-                {skinLabel}{skinProfile.acne_type ? ` with\n${skinProfile.acne_type} acne` : ''}
-              </Text>
+                {/* Condition title */}
+                <Text style={s.scanCardTitle}>
+                  {skinLabel}{skinProfile.acne_type ? ` with\n${skinProfile.acne_type} acne` : ''}
+                </Text>
 
-              {/* Description */}
-              <Text style={s.scanCardDesc}>
-                {skinDesc}
-              </Text>
+                {/* Description */}
+                <Text style={s.scanCardDesc}>
+                  {skinDesc}
+                </Text>
 
-              {/* Metric pills row */}
-              <View style={s.metricsRow}>
-                <MetricPill label="Skin" value={skinLabel} color={Colors.skinOily} />
-                {skinProfile.severity && (
-                  <MetricPill label="Severity" value={capitalize(skinProfile.severity)} color={getSeverityColor(skinProfile.severity)} />
-                )}
-                {skinProfile.acne_type && (
-                  <MetricPill label="Acne" value={capitalize(skinProfile.acne_type)} color={Colors.primaryLight} />
-                )}
-              </View>
+                {/* Metric pills row */}
+                <View style={s.metricsRow}>
+                  <MetricPill label="Skin" value={skinLabel} color={Colors.skinOily} />
+                  {skinProfile.severity && (
+                    <MetricPill label="Severity" value={capitalize(skinProfile.severity)} color={getSeverityColor(skinProfile.severity)} />
+                  )}
+                  {skinProfile.acne_type && (
+                    <MetricPill label="Acne" value={capitalize(skinProfile.acne_type)} color={Colors.primaryLight} />
+                  )}
+                  <MetricPill label="Score" value={`${displayScore}/10`} color={getSeverityColor(skinProfile.severity)} />
+                </View>
 
-              {/* Zone indicators */}
-              <View style={s.zoneRow}>
-                <ZoneDot color="#2DD4BF" label="oil" />
-                <ZoneDot color="#FCD34D" label="spots" />
-                <ZoneDot color="#A78BFA" label={skinProfile.acne_type ?? 'acne'} />
-              </View>
+                {/* Zone indicators */}
+                <View style={s.zoneRow}>
+                  <ZoneDot color="#2DD4BF" label="oil" />
+                  <ZoneDot color="#FCD34D" label="spots" />
+                  <ZoneDot color="#A78BFA" label={skinProfile.acne_type ?? 'acne'} />
+                </View>
 
-              {/* Bottom CTA */}
-              <View style={s.scanCardCta}>
-                <Text style={s.scanCardCtaText}>View full analysis</Text>
-                <ChevronRight size={14} color="rgba(255,255,255,0.6)" />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+                {/* Bottom CTA */}
+                <View style={s.scanCardCta}>
+                  <Text style={s.scanCardCtaText}>View full analysis</Text>
+                  <ChevronRight size={14} color="rgba(255,255,255,0.6)" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
 
           {/* ── Quick Actions Row ── */}
-          <View style={s.quickRow}>
-            <TouchableOpacity style={s.quickCard} activeOpacity={0.8} onPress={() => router.push('/(tabs)/plan')}>
-              <View style={s.quickIconCircle}>
-                <PlanGridIcon size={18} color={Colors.primaryLight} />
-              </View>
-              <Text style={s.quickCardTitle}>Skin Plan</Text>
-              <Text style={s.quickCardSub}>Your game plan</Text>
-            </TouchableOpacity>
+          <Animated.View style={{ opacity: cardAnims[1].opacity, transform: [{ translateY: cardAnims[1].translateY }] }}>
+            <View style={s.quickRow}>
+              <Animated.View style={{ transform: [{ scale: quickScales[0] }] }}>
+                <TouchableOpacity
+                  style={s.quickCard}
+                  activeOpacity={1}
+                  onPressIn={() => springPress(quickScales[0])}
+                  onPressOut={() => springRelease(quickScales[0])}
+                  onPress={() => router.push('/(tabs)/plan')}
+                >
+                  <View style={s.quickIconCircle}>
+                    <PlanGridIcon size={18} color={Colors.primaryLight} />
+                  </View>
+                  <Text style={s.quickCardTitle}>Skin Plan</Text>
+                  <Text style={s.quickCardSub}>Your game plan</Text>
+                </TouchableOpacity>
+              </Animated.View>
 
-            <TouchableOpacity style={s.quickCard} activeOpacity={0.8} onPress={() => router.push('/(tabs)/scan')}>
-              <View style={s.quickIconCircle}>
-                <ScanLineIcon size={18} color={Colors.primaryLight} />
-              </View>
-              <Text style={s.quickCardTitle}>Re-scan</Text>
-              <Text style={s.quickCardSub}>Update results</Text>
-            </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: quickScales[1] }] }}>
+                <TouchableOpacity
+                  style={s.quickCard}
+                  activeOpacity={1}
+                  onPressIn={() => springPress(quickScales[1])}
+                  onPressOut={() => springRelease(quickScales[1])}
+                  onPress={() => router.push('/(tabs)/scan')}
+                >
+                  <View style={s.quickIconCircle}>
+                    <ScanLineIcon size={18} color={Colors.primaryLight} />
+                  </View>
+                  <Text style={s.quickCardTitle}>Re-scan</Text>
+                  <Text style={s.quickCardSub}>Update results</Text>
+                </TouchableOpacity>
+              </Animated.View>
 
-            <TouchableOpacity style={s.quickCard} activeOpacity={0.8} onPress={() => router.push('/coach')}>
-              <View style={s.quickIconCircle}>
-                <ChatBubbleIcon size={18} color={Colors.primaryLight} />
-              </View>
-              <Text style={s.quickCardTitle}>Coach</Text>
-              <Text style={s.quickCardSub}>Ask anything</Text>
-            </TouchableOpacity>
-          </View>
+              <Animated.View style={{ transform: [{ scale: quickScales[2] }] }}>
+                <TouchableOpacity
+                  style={s.quickCard}
+                  activeOpacity={1}
+                  onPressIn={() => springPress(quickScales[2])}
+                  onPressOut={() => springRelease(quickScales[2])}
+                  onPress={() => router.push('/coach')}
+                >
+                  <View style={s.quickIconCircle}>
+                    <ChatBubbleIcon size={18} color={Colors.primaryLight} />
+                  </View>
+                  <Text style={s.quickCardTitle}>Coach</Text>
+                  <Text style={s.quickCardSub}>Ask anything</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </Animated.View>
 
           {/* ── Routine Preview ── */}
-          {plan && (
-            <TouchableOpacity style={s.routineCard} activeOpacity={0.88} onPress={() => router.push('/(tabs)/plan')}>
-              <View style={s.routineCardHeader}>
-                <Text style={s.routineCardTitle}>Your skin's game plan</Text>
-                <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
-              </View>
-              <Text style={s.routineCardSub}>
-                Built from your scan — tap to see your full routine
-              </Text>
-              <View style={s.routineProgress}>
-                <MiniWaveChart />
-              </View>
-            </TouchableOpacity>
-          )}
+          <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
+            {plan && (
+              <TouchableOpacity style={s.routineCard} activeOpacity={0.88} onPress={() => router.push('/(tabs)/plan')}>
+                <View style={s.routineCardHeader}>
+                  <Text style={s.routineCardTitle}>Your skin's game plan</Text>
+                  <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
+                </View>
+                <Text style={s.routineCardSub}>
+                  Built from your scan — tap to see your full routine
+                </Text>
+                <View style={s.routineProgress}>
+                  <MiniWaveChart />
+                </View>
+              </TouchableOpacity>
+            )}
+          </Animated.View>
 
           {/* ── Progress card ── */}
-          <TouchableOpacity style={s.progressCard} activeOpacity={0.88} onPress={() => router.push('/(tabs)/progress')}>
-            <View style={s.progressCardHeader}>
-              <Text style={s.progressCardTitle}>Track your progress</Text>
-              <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
-            </View>
-            <Text style={s.progressCardSub}>
-              Log photos to see how your skin changes over time
-            </Text>
-          </TouchableOpacity>
+          <Animated.View style={{ opacity: cardAnims[3].opacity, transform: [{ translateY: cardAnims[3].translateY }] }}>
+            <TouchableOpacity style={s.progressCard} activeOpacity={0.88} onPress={() => router.push('/(tabs)/progress')}>
+              <View style={s.progressCardHeader}>
+                <Text style={s.progressCardTitle}>Track your progress</Text>
+                <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
+              </View>
+              <Text style={s.progressCardSub}>
+                Log photos to see how your skin changes over time
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
 
           <View style={{ height: 110 }} />
         </ScrollView>
@@ -436,6 +541,15 @@ const s = StyleSheet.create({
     marginBottom: Spacing.lg,
     overflow: 'hidden',
     ...Shadows.xl,
+  },
+  heroInnerGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+    borderRadius: 20,
+    backgroundColor: 'rgba(124,92,252,0.15)',
   },
   scanCardTop: {
     flexDirection: 'row',
