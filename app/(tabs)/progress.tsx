@@ -398,19 +398,6 @@ export default function ProgressScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
-      ) : photos.length === 0 ? (
-        <View style={styles.centered}>
-          <CameraIcon size={64} color={Colors.primary} />
-          <Text style={styles.emptyTitle}>Start Your Progress Journey</Text>
-          <Text style={styles.emptySubtitle}>Log your first photo to begin tracking your skin transformation</Text>
-          <TouchableOpacity
-            style={[styles.startButton, uploading && styles.buttonDisabled]}
-            onPress={logProgressPhoto}
-            disabled={uploading}
-          >
-            <Text style={styles.startButtonText}>{uploading ? 'Processing...' : 'Log First Photo'}</Text>
-          </TouchableOpacity>
-        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 

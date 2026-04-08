@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, FlatList, Linking, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Shadows } from '@/lib/theme';
+import { Colors, Shadows, Spacing, BorderRadius, Typography } from '@/lib/theme';
 import { PILLAR_EMOJIS, PILLAR_LABELS } from '@/lib/plan-constants';
 import { matchProductsToPick } from '@/lib/match-products-to-pick';
 import type { RankedItem } from '@/lib/database.types';
@@ -30,16 +30,16 @@ function CarouselCard({ product }: { product: Product }) {
     >
       <View style={cStyles.carouselIcon}>
         <Text style={cStyles.carouselEmoji}>
-          {product.category === 'Skincare' ? '\u2728' :
-           product.category === 'Supplements' ? '\u{1F48A}' :
-           product.category === 'Foods' ? '\u{1F957}' :
-           product.category === 'Herbal' ? '\u{1F33F}' : '\u{1F6CF}'}
+          {product.category === 'Skincare' ? '✨' :
+           product.category === 'Supplements' ? '💊' :
+           product.category === 'Foods' ? '🥗' :
+           product.category === 'Herbal' ? '🌿' : '🛏️'}
         </Text>
       </View>
       {product.brand ? <Text style={cStyles.carouselBrand}>{product.brand}</Text> : null}
       <Text style={cStyles.carouselName} numberOfLines={2}>{product.name}</Text>
       {product.price ? <Text style={cStyles.carouselPrice}>{product.price}</Text> : null}
-      <Text style={cStyles.carouselLink}>View on Amazon {'\u2197'}</Text>
+      <Text style={cStyles.carouselLink}>View on Amazon ↗</Text>
     </TouchableOpacity>
   );
 }
@@ -51,7 +51,7 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
 
   const relatedProducts = matchProductsToPick(pick);
   const hasProducts = relatedProducts.length > 0;
-  const pillarEmoji = PILLAR_EMOJIS[pick.pillar] || '\u2728';
+  const pillarEmoji = PILLAR_EMOJIS[pick.pillar] || '✨';
   const pillarLabel = PILLAR_LABELS[pick.pillar] || pick.pillar.toUpperCase();
 
   return (
@@ -69,10 +69,14 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
 
         {/* Close button */}
         <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
-          <Text style={styles.closeText}>{'\u2715'}</Text>
+          <Text style={styles.closeText}>✕</Text>
         </TouchableOpacity>
 
-        <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Pillar badge */}
           <View style={styles.pillarBadge}>
             <Text style={styles.pillarEmoji}>{pillarEmoji}</Text>
@@ -95,6 +99,9 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
             </View>
           </View>
 
+          {/* Divider */}
+          <View style={styles.divider} />
+
           {/* Add to routine */}
           <TouchableOpacity
             style={[styles.routineBtn, isInRoutine && styles.routineBtnActive]}
@@ -102,17 +109,17 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
             onPress={() => onToggleRoutine(pick)}
           >
             <Text style={[styles.routineBtnText, isInRoutine && styles.routineBtnTextActive]}>
-              {isInRoutine ? '\u2713  In Your Routine' : '+  Add to Routine'}
+              {isInRoutine ? '✓  In Your Routine' : '+  Add to Routine'}
             </Text>
           </TouchableOpacity>
 
-          {/* Amazon search for this pick */}
+          {/* Amazon search */}
           <TouchableOpacity
             style={styles.amazonBtn}
             activeOpacity={0.85}
             onPress={() => openAmazonSearch(pick.title)}
           >
-            <Text style={styles.amazonBtnText}>Search "{pick.title}" on Amazon {'\u2197'}</Text>
+            <Text style={styles.amazonBtnText}>Search "{pick.title}" on Amazon ↗</Text>
           </TouchableOpacity>
 
           {/* Related products carousel */}
@@ -138,16 +145,16 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAF8F5',
+    backgroundColor: Colors.background,
   },
   handleBar: {
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: '#D4CFC6',
+    backgroundColor: Colors.border,
     borderRadius: 2,
   },
   closeBtn: {
@@ -157,128 +164,145 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F2EDE6',
+    backgroundColor: Colors.cardGlass,
+    borderWidth: 1,
+    borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
   },
   closeText: {
-    fontSize: 16,
-    color: '#6B6358',
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
+
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 24, paddingTop: 8 },
+  scrollContent: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm },
 
   pillarBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   pillarEmoji: { fontSize: 18 },
   pillarLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#9B9488',
+    color: Colors.primary,
     letterSpacing: 1.5,
   },
 
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
-    color: '#1C1C1A',
+    color: Colors.text,
     letterSpacing: -0.4,
-    marginBottom: 24,
+    lineHeight: 32,
+    marginBottom: Spacing.xl,
   },
 
-  section: { marginBottom: 20 },
+  section: { marginBottom: Spacing.lg },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#9B9488',
-    letterSpacing: 1.2,
-    marginBottom: 8,
+    color: Colors.textMuted,
+    letterSpacing: 1.4,
+    marginBottom: Spacing.sm,
   },
   rationale: {
-    fontSize: 16,
-    color: '#5A5A50',
-    lineHeight: 24,
+    fontSize: 15,
+    color: Colors.textSecondary,
+    lineHeight: 23,
   },
 
-  impactRow: { marginBottom: 24 },
+  impactRow: { marginBottom: Spacing.lg },
   impactBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#EDE8DF',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 12,
+    backgroundColor: 'rgba(124,92,252,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,92,252,0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.md,
   },
   impactText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#6B6358',
+    color: Colors.primaryLight,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: Colors.borderLight,
+    marginBottom: Spacing.xl,
   },
 
   routineBtn: {
-    backgroundColor: '#2D4A3E',
-    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.lg,
     paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   routineBtnActive: {
-    backgroundColor: '#EDE8DF',
+    backgroundColor: 'rgba(124,92,252,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,92,252,0.35)',
   },
   routineBtnText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: Colors.white,
   },
   routineBtnTextActive: {
-    color: '#2D4A3E',
+    color: Colors.primaryLight,
   },
 
   amazonBtn: {
-    backgroundColor: '#F2EDE6',
-    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.lg,
     paddingVertical: 14,
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: Spacing.xxl,
   },
   amazonBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6B6358',
+    color: Colors.textSecondary,
   },
 
-  carouselSection: { marginBottom: 20 },
+  carouselSection: { marginBottom: Spacing.lg },
   carouselTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#1C1C1A',
+    color: Colors.text,
     letterSpacing: -0.2,
-    marginBottom: 14,
+    marginBottom: Spacing.md,
   },
   carouselList: {
-    gap: 12,
-    paddingRight: 4,
+    gap: Spacing.md,
+    paddingRight: Spacing.xs,
   },
 });
 
 const cStyles = StyleSheet.create({
   carouselCard: {
     width: CAROUSEL_CARD_WIDTH,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: 12,
     gap: 4,
-    ...Shadows.xs,
   },
   carouselIcon: {
     width: CAROUSEL_CARD_WIDTH - 24,
     height: 70,
-    backgroundColor: '#F7F5F1',
-    borderRadius: 10,
+    backgroundColor: Colors.cardGlass,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
@@ -287,26 +311,26 @@ const cStyles = StyleSheet.create({
   carouselBrand: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#9B9488',
+    color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   carouselName: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1C1C1A',
+    color: Colors.text,
     lineHeight: 16,
   },
   carouselPrice: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#2D4A3E',
+    color: Colors.primary,
     marginTop: 2,
   },
   carouselLink: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#9B9488',
+    color: Colors.textMuted,
     marginTop: 4,
   },
 });

@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { differenceInWeeks } from 'date-fns';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
 import type { SkinType, AcneType, Severity } from '@/lib/database.types';
@@ -252,6 +253,51 @@ export default function ScanScreen() {
     }
   };
 
+  const autoSaveToProgress = async (uri: string, base64: string, analysisResult: AnalysisResult) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: existing } = await supabase
+        .from('progress_photos')
+        .select('week_number, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const last = existing?.[0];
+      const weekNumber = last
+        ? differenceInWeeks(new Date(), new Date(last.created_at)) + last.week_number
+        : 1;
+
+      let imageUrl = uri;
+      try {
+        const fileName = `${user.id}/progress-${Date.now()}.jpg`;
+        const { data: uploadData } = await supabase.storage
+          .from('progress-photos')
+          .upload(fileName, decode(base64), { contentType: 'image/jpeg' });
+        if (uploadData) {
+          const { data: { publicUrl } } = supabase.storage.from('progress-photos').getPublicUrl(fileName);
+          imageUrl = publicUrl;
+        }
+      } catch {}
+
+      const score = analysisResult.severity_score ?? (analysisResult.severity === 'mild' ? 3 : analysisResult.severity === 'moderate' ? 6 : 8);
+
+      await supabase.from('progress_photos').insert({
+        user_id: user.id,
+        image_url: imageUrl,
+        week_number: weekNumber,
+        severity_score: Math.round(score),
+        analysis_notes: analysisResult.analysis_notes ?? '',
+        notes: '',
+        annotations: analysisResult.zones ?? {},
+      } as any);
+    } catch (err) {
+      console.error('Auto-save to progress error:', err);
+    }
+  };
+
   const analyzePhoto = async (uri: string, preloadedBase64?: string) => {
     setAnalyzing(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -270,6 +316,9 @@ export default function ScanScreen() {
 
       setResult(analysisResult);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Silently auto-save to progress log
+      autoSaveToProgress(uri, base64, analysisResult);
     } catch (err) {
       console.error('Analysis error:', err);
       Alert.alert(
