@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useTabTransition } from '@/hooks/useTabTransition';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
 import ScreenBackground from '@/components/ScreenBackground';
+import ParticleBurst, { ParticleBurstHandle } from '@/components/ParticleBurst';
 
 // ─── SVG Icon Components ────────────────────────────────────────────────────
 
@@ -140,6 +141,20 @@ export default function ProgressScreen() {
   const [expandPhoto, setExpandPhoto] = useState<ProgressPhoto | null>(null);
   const [expandOrigin, setExpandOrigin] = useState({ x: 0, y: 0, size: 0 });
   const cellRefs = useRef<Record<string, View | null>>({});
+  const burstRef = useRef<ParticleBurstHandle>(null);
+
+  // Calendar row entrance anims — 6 rows max
+  const calRowAnims = useRef(
+    Array.from({ length: 6 }, () => new Animated.Value(0))
+  ).current;
+
+  useEffect(() => {
+    if (loading) return;
+    calRowAnims.forEach(a => a.setValue(0));
+    Animated.stagger(40, calRowAnims.map(a =>
+      Animated.timing(a, { toValue: 1, duration: 350, useNativeDriver: true })
+    )).start();
+  }, [loading]);
 
   const fetchPhotos = useCallback(async () => {
     setLoading(true);
@@ -220,8 +235,9 @@ export default function ProgressScreen() {
 
       if (insertError) throw insertError;
 
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await fetchPhotos();
+      burstRef.current?.trigger();
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       console.error('Progress tracking error:', err);
       Alert.alert('Error', 'Could not save your progress photo. Please try again.');
@@ -422,52 +438,54 @@ export default function ProgressScreen() {
                 </View>
               ))}
 
-              {paddingCells.map((_, i) => <View key={`pad-${i}`} style={styles.dayCell} />)}
-
-              {calendarDays.map(day => {
-                const key = format(day, 'yyyy-MM-dd');
-                const dayPhotos = photosByDate[key] ?? [];
-                const latestDayPhoto = dayPhotos[0] ?? null;
-                const hasPhotos = dayPhotos.length > 0;
-                const isToday = isSameDay(day, new Date());
-
+              {Array.from({ length: Math.ceil((paddingCells.length + calendarDays.length) / 7) }, (_, rowIdx) => {
+                const startCell = rowIdx * 7;
+                const allCells  = [...paddingCells.map(() => null), ...calendarDays];
+                const rowCells  = allCells.slice(startCell, startCell + 7);
+                const rowAnim   = calRowAnims[Math.min(rowIdx, calRowAnims.length - 1)];
                 return (
-                  <TouchableOpacity
-                    key={key}
-                    style={styles.dayCell}
-                    onPress={() => {
-                      if (!latestDayPhoto) return;
-                      setSelectedDay(day);
-                      expandFromCell(key, latestDayPhoto);
-                    }}
-                    activeOpacity={hasPhotos ? 0.7 : 1}
+                  <Animated.View
+                    key={rowIdx}
+                    style={{ flexDirection: 'row', opacity: rowAnim, transform: [{ translateY: rowAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}
                   >
-                    <View
-                      ref={(ref) => { if (hasPhotos) cellRefs.current[key] = ref; }}
-                      style={[
-                        styles.dayCellCircle,
-                        hasPhotos && styles.dayCellLogged,
-                        isToday && !hasPhotos && styles.dayCellToday,
-                        isToday && hasPhotos && styles.dayCellTodayLogged,
-                      ]}
-                    >
-                      {hasPhotos && latestDayPhoto?.image_url ? (
-                        <Image
-                          source={{ uri: latestDayPhoto.image_url }}
-                          style={styles.dayCellThumb}
-                        />
-                      ) : null}
-                      <Text
-                        style={[
-                          styles.dayCellNumber,
-                          hasPhotos && styles.dayCellNumberLogged,
-                          isToday && !hasPhotos && styles.dayCellNumberToday,
-                        ]}
-                      >
-                        {format(day, 'd')}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                    {rowCells.map((day, cellIdx) => {
+                      if (!day) return <View key={`pad-${cellIdx}`} style={styles.dayCell} />;
+                      const key        = format(day, 'yyyy-MM-dd');
+                      const dayPhotos  = photosByDate[key] ?? [];
+                      const latestDayPhoto = dayPhotos[0] ?? null;
+                      const hasPhotos  = dayPhotos.length > 0;
+                      const isToday    = isSameDay(day, new Date());
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={styles.dayCell}
+                          onPress={() => { if (!latestDayPhoto) return; setSelectedDay(day); expandFromCell(key, latestDayPhoto); }}
+                          activeOpacity={hasPhotos ? 0.7 : 1}
+                        >
+                          <View
+                            ref={(ref) => { if (hasPhotos) cellRefs.current[key] = ref; }}
+                            style={[
+                              styles.dayCellCircle,
+                              hasPhotos && styles.dayCellLogged,
+                              isToday && !hasPhotos && styles.dayCellToday,
+                              isToday && hasPhotos && styles.dayCellTodayLogged,
+                            ]}
+                          >
+                            {hasPhotos && latestDayPhoto?.image_url ? (
+                              <Image source={{ uri: latestDayPhoto.image_url }} style={styles.dayCellThumb} />
+                            ) : null}
+                            <Text style={[
+                              styles.dayCellNumber,
+                              hasPhotos && styles.dayCellNumberLogged,
+                              isToday && !hasPhotos && styles.dayCellNumberToday,
+                            ]}>
+                              {format(day, 'd')}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </Animated.View>
                 );
               })}
             </View>
@@ -904,6 +922,7 @@ export default function ProgressScreen() {
           </Animated.View>
         </View>
       )}
+      <ParticleBurst ref={burstRef} />
     </Animated.View>
   );
 }
@@ -976,7 +995,7 @@ const styles = StyleSheet.create({
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   monthNavBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   monthTitle: { fontSize: 18, fontWeight: '600', color: '#1C1C1A' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarGrid: { flexDirection: 'column' },
   dayHeader: { width: DAY_CELL, alignItems: 'center', paddingBottom: Spacing.sm },
   dayHeaderText: { fontSize: 11, color: '#8A8A7A', fontWeight: '700', letterSpacing: 0.3 },
   dayCell: {
@@ -994,7 +1013,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayCellLogged: {
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(124,92,252,0.25)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(124,92,252,0.5)',
   },
   dayCellToday: {
     backgroundColor: Colors.secondary,
