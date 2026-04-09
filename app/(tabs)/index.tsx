@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Dimensions,
   Animated,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -266,79 +267,90 @@ export default function HomeScreen() {
       <Animated.View style={[s.root, animatedStyle]}>
         <ScreenBackground preset="home" />
         <ScrollView
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: Colors.background }}
           contentContainerStyle={s.scrollContent}
           showsVerticalScrollIndicator={false}
+          overScrollMode="never"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryLight} />}
         >
           {Header}
-
-          <Animated.View style={[{ opacity: cardAnims[4].opacity, transform: [{ translateY: cardAnims[4].translateY }] }, { paddingHorizontal: 20, paddingBottom: 12 }]}>
-            <StreakCounter />
-          </Animated.View>
 
           {/* ── Scan Result Hero Card ── */}
           <Animated.View style={{ opacity: cardAnims[0].opacity, transform: [{ translateY: cardAnims[0].translateY }] }}>
             <TouchableOpacity activeOpacity={0.92} onPress={() => router.push('/(tabs)/scan')}>
               <LinearGradient
-                colors={['#3B1FA3', '#1E0F5C']}
+                colors={['#5B35D5', '#3B1FA3']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={s.scanCard}
               >
-                <Animated.View
-                  pointerEvents="none"
-                  style={[s.heroInnerGlow, { opacity: heroGlowOpacity }]}
-                />
+                <Animated.View pointerEvents="none" style={[s.heroInnerGlow, { opacity: heroGlowOpacity }]} />
 
-                {/* Top badges */}
-                <View style={s.scanCardTop}>
-                  <View style={s.confidenceBadge}>
-                    <View style={s.confidenceDot} />
-                    <Text style={s.confidenceText}>confidence high</Text>
-                  </View>
-                  {scanAgoLabel && (
-                    <Text style={s.scanAgoText}>{scanAgoLabel}</Text>
-                  )}
+                {/* Label + Streak row */}
+                <View style={s.scanCardTopRow}>
+                  <Text style={s.scanCardLabel}>Today's scan result</Text>
+                  <StreakCounter compact />
                 </View>
-
-                {/* Label */}
-                <Text style={s.scanCardLabel}>Today's scan result</Text>
 
                 {/* Condition title */}
                 <Text style={s.scanCardTitle}>
-                  {skinLabel}{skinProfile.acne_type ? ` with\n${skinProfile.acne_type} acne` : ''}
+                  {skinLabel}{skinProfile.acne_type ? ` with ${skinProfile.acne_type} acne` : ''}
                 </Text>
 
-                {/* Description */}
-                <Text style={s.scanCardDesc}>
-                  {skinDesc}
-                </Text>
+                {/* Analysis notes */}
+                {skinProfile.analysis_notes ? (
+                  <Text style={s.scanCardDesc} numberOfLines={4}>{skinProfile.analysis_notes}</Text>
+                ) : (
+                  <Text style={s.scanCardDesc}>{skinDesc}</Text>
+                )}
 
-                {/* Metric pills row */}
-                <View style={s.metricsRow}>
-                  <MetricPill label="Skin" value={skinLabel} color={Colors.skinOily} />
-                  {skinProfile.severity && (
-                    <MetricPill label="Severity" value={capitalize(skinProfile.severity)} color={getSeverityColor(skinProfile.severity)} />
+                {/* Photo + Metrics row */}
+                <View style={s.photoMetricsRow}>
+                  {skinProfile.photo_url ? (
+                    <Image source={{ uri: skinProfile.photo_url }} style={s.scanFacePhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[s.scanFacePhoto, s.scanFacePhotoPlaceholder]} />
                   )}
-                  {skinProfile.acne_type && (
-                    <MetricPill label="Acne" value={capitalize(skinProfile.acne_type)} color={Colors.primaryLight} />
-                  )}
-                  <MetricPill label="Score" value={`${displayScore}/10`} color={getSeverityColor(skinProfile.severity)} />
+                  <View style={s.metricsStack}>
+                    <View style={s.metricRow}>
+                      <Text style={s.metricRowLabel}>Breakouts</Text>
+                      <Text style={[s.metricRowValue, { color: getSeverityColor(skinProfile.severity) }]}>{capitalize(skinProfile.severity ?? 'mild')}</Text>
+                    </View>
+                    <View style={s.metricRow}>
+                      <Text style={s.metricRowLabel}>Oil</Text>
+                      <Text style={[s.metricRowValue, { color: skinProfile.skin_type === 'oily' ? '#FCD34D' : skinProfile.skin_type === 'combination' ? '#FCD34D' : Colors.textSecondary }]}>
+                        {skinProfile.skin_type === 'oily' ? 'High' : skinProfile.skin_type === 'combination' ? 'Medium' : skinProfile.skin_type === 'dry' ? 'Low' : 'Normal'}
+                      </Text>
+                    </View>
+                    <View style={s.metricRow}>
+                      <Text style={s.metricRowLabel}>Redness</Text>
+                      <Text style={[s.metricRowValue, { color: skinProfile.skin_type === 'sensitive' ? '#F87171' : Colors.textSecondary }]}>
+                        {skinProfile.skin_type === 'sensitive' ? 'High' : skinProfile.severity === 'severe' ? 'High' : skinProfile.severity === 'moderate' ? 'Medium' : 'Low'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
 
                 {/* Zone indicators */}
-                <View style={s.zoneRow}>
-                  <ZoneDot color="#2DD4BF" label="oil" />
-                  <ZoneDot color="#FCD34D" label="spots" />
-                  <ZoneDot color="#A78BFA" label={skinProfile.acne_type ?? 'acne'} />
-                </View>
-
-                {/* Bottom CTA */}
-                <View style={s.scanCardCta}>
-                  <Text style={s.scanCardCtaText}>View full analysis</Text>
-                  <ChevronRight size={14} color="rgba(255,255,255,0.6)" />
-                </View>
+                {(() => {
+                  const zones = (skinProfile as any).zones as Record<string, { severity: string; note: string }> | null;
+                  if (!zones || Object.keys(zones).length === 0) return null;
+                  const ZONE_COLOR: Record<string, string> = { clear: '#4ADE80', mild: '#FCD34D', moderate: '#FB923C', severe: '#F87171' };
+                  const ZONE_LABELS: Record<string, string> = { forehead: 'Forehead', left_cheek: 'Left Cheek', right_cheek: 'Right Cheek', nose: 'Nose', chin: 'Chin', jawline: 'Jawline' };
+                  return (
+                    <View style={s.zonesSection}>
+                      <Text style={s.zonesSectionLabel}>ZONES</Text>
+                      <View style={s.zoneChips}>
+                        {Object.entries(zones).filter(([k]) => ZONE_LABELS[k]).map(([key, val]) => (
+                          <View key={key} style={s.zoneChip}>
+                            <View style={[s.zoneChipDot, { backgroundColor: ZONE_COLOR[val.severity] ?? '#A78BFA' }]} />
+                            <Text style={s.zoneChipText}>{ZONE_LABELS[key]}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })()}
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
@@ -396,23 +408,6 @@ export default function HomeScreen() {
             </View>
           </Animated.View>
 
-          {/* ── Routine Preview ── */}
-          <Animated.View style={{ opacity: cardAnims[2].opacity, transform: [{ translateY: cardAnims[2].translateY }] }}>
-            {plan && (
-              <TouchableOpacity style={s.routineCard} activeOpacity={0.88} onPress={() => router.push('/(tabs)/plan')}>
-                <View style={s.routineCardHeader}>
-                  <Text style={s.routineCardTitle}>Your skin's game plan</Text>
-                  <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
-                </View>
-                <Text style={s.routineCardSub}>
-                  Built from your scan — tap to see your full routine
-                </Text>
-                <View style={s.routineProgress}>
-                  <MiniWaveChart />
-                </View>
-              </TouchableOpacity>
-            )}
-          </Animated.View>
 
           {/* ── Progress card ── */}
           <Animated.View style={{ opacity: cardAnims[3].opacity, transform: [{ translateY: cardAnims[3].translateY }] }}>
@@ -427,7 +422,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          <View style={{ height: 110 }} />
+          <View style={{ height: 90 }} />
         </ScrollView>
 
 
@@ -446,6 +441,8 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={s.heroContent}
         showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: Colors.background }}
+        overScrollMode="never"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primaryLight} />}
       >
         {/* Subtle purple glow behind hero text */}
@@ -537,8 +534,8 @@ const s = StyleSheet.create({
   /* Scan card */
   scanCard: {
     borderRadius: BorderRadius.xxl,
-    padding: Spacing.xxl,
-    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.sm,
     overflow: 'hidden',
     ...Shadows.xl,
   },
@@ -547,126 +544,130 @@ const s = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: '60%',
+    height: '50%',
     borderRadius: 20,
-    backgroundColor: 'rgba(124,92,252,0.15)',
+    backgroundColor: 'rgba(124,92,252,0.2)',
   },
-  scanCardTop: {
+  scanCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xxl,
-  },
-  confidenceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.pill,
-  },
-  confidenceDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: Colors.success,
-  },
-  confidenceText: {
-    fontFamily: Fonts.medium,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  scanAgoText: {
-    fontFamily: Fonts.medium,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    marginBottom: Spacing.xs,
   },
   scanCardLabel: {
     fontFamily: Fonts.medium,
     fontSize: 13,
     color: 'rgba(255,255,255,0.6)',
-    marginBottom: Spacing.xs,
   },
   scanCardTitle: {
     fontFamily: Fonts.extrabold,
-    fontSize: 28,
+    fontSize: 26,
     color: Colors.white,
-    lineHeight: 34,
+    lineHeight: 32,
     letterSpacing: -0.5,
     marginBottom: Spacing.sm,
   },
   scanCardDesc: {
     fontFamily: Fonts.regular,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.55)',
-    lineHeight: 19,
-    marginBottom: Spacing.lg,
+    color: 'rgba(255,255,255,0.75)',
+    lineHeight: 18,
+    marginBottom: Spacing.sm,
   },
-  metricsRow: {
+  photoMetricsRow: {
     flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+    marginBottom: Spacing.sm,
+    alignItems: 'stretch',
   },
-  metricPill: {
+  scanFacePhoto: {
+    width: 110,
+    height: 130,
+    borderRadius: BorderRadius.lg,
+  },
+  scanFacePhotoPlaceholder: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  metricsStack: {
+    flex: 1,
+    gap: Spacing.sm,
+    justifyContent: 'space-between',
+  },
+  metricRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  metricRowLabel: {
+    fontFamily: Fonts.regular,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  metricRowValue: {
+    fontFamily: Fonts.bold,
+    fontSize: 15,
+    color: Colors.white,
+  },
+  zonesSection: {
+    marginTop: Spacing.xs,
+  },
+  zonesSectionLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.5)',
+    letterSpacing: 1.5,
+    marginBottom: Spacing.sm,
+  },
+  zoneChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  zoneChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: BorderRadius.pill,
   },
-  metricLabel: {
-    fontFamily: Fonts.regular,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-  },
-  metricValue: {
-    fontFamily: Fonts.semibold,
-    fontSize: 12,
-    color: Colors.white,
-  },
-  zoneRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: Spacing.xl,
-  },
-  zoneDotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  zoneDot: {
+  zoneChipDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  zoneDotLabel: {
+  zoneChipText: {
     fontFamily: Fonts.medium,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
   },
-  scanCardCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  scanCardCtaText: {
-    fontFamily: Fonts.semibold,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.55)',
-  },
+  // Legacy — kept for ZoneDot/MetricPill used elsewhere
+  zoneDotRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  zoneDot: { width: 8, height: 8, borderRadius: 4 },
+  zoneDotLabel: { fontFamily: Fonts.medium, fontSize: 11, color: 'rgba(255,255,255,0.55)' },
+  metricPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 11, paddingVertical: 6, borderRadius: BorderRadius.pill },
+  metricLabel: { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.5)' },
+  metricValue: { fontFamily: Fonts.semibold, fontSize: 12, color: Colors.white },
+  metricsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: Spacing.lg },
+  zoneRow: { flexDirection: 'row', gap: 12, marginBottom: Spacing.xl },
+  scanCardCta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  scanCardCtaText: { fontFamily: Fonts.semibold, fontSize: 13, color: 'rgba(255,255,255,0.55)' },
+  scanAgoText: { fontFamily: Fonts.medium, fontSize: 12, color: 'rgba(255,255,255,0.5)' },
 
   /* Quick actions */
   quickRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   quickCard: {
-    flex: 1,
+    width: Math.floor((SW - Spacing.xl * 2 - Spacing.sm * 2) / 3),
     backgroundColor: Colors.card,
     borderRadius: BorderRadius.xl,
     padding: Spacing.md,
@@ -732,8 +733,8 @@ const s = StyleSheet.create({
   progressCard: {
     backgroundColor: 'rgba(124,92,252,0.09)',
     borderRadius: BorderRadius.xxl,
-    padding: Spacing.xxl,
-    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(124,92,252,0.2)',
   },

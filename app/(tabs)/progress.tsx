@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useTabTransition } from '@/hooks/useTabTransition';
 import { Colors, Typography, BorderRadius, Spacing, Shadows } from '@/lib/theme';
@@ -90,7 +91,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay,
 type ProgressPhoto = {
   id: string;
   user_id: string;
-  image_url: string;
+  photo_url: string;
   week_number: number;
   severity_score: number;
   improvement_percentage: number | null;
@@ -112,7 +113,7 @@ const ZONE_LABELS: Record<string, string> = {
   chin: 'Chin & Jaw',
 };
 
-const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function ProgressScreen() {
   const insets = useSafeAreaInsets();
@@ -124,6 +125,10 @@ export default function ProgressScreen() {
   // Calendar state
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    setCalendarMonth(new Date());
+  }, []));
 
   // Detail modal state
   const [modalVisible, setModalVisible] = useState(false);
@@ -224,7 +229,7 @@ export default function ProgressScreen() {
 
       const { error: insertError } = await supabase.from('progress_photos').insert({
         user_id: user.id,
-        image_url: photoUrl,
+        photo_url: photoUrl,
         week_number: weekNumber,
         severity_score: Math.round(trackData.severity_score ?? 5),
         improvement_percentage: trackData.improvement_percentage ?? null,
@@ -322,8 +327,8 @@ export default function ProgressScreen() {
     return (
       <View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-          {WEEKDAYS.map(d => (
-            <View key={d} style={{ width: cellWidth, alignItems: 'center', paddingBottom: Spacing.sm }}>
+          {WEEKDAYS.map((d, i) => (
+            <View key={i} style={{ width: cellWidth, alignItems: 'center', paddingBottom: Spacing.sm }}>
               <Text style={styles.dayHeaderText}>{d}</Text>
             </View>
           ))}
@@ -353,17 +358,19 @@ export default function ProgressScreen() {
                   style={[
                     { width: circleSize, height: circleSize, borderRadius: circleSize / 2, justifyContent: 'center', alignItems: 'center' },
                     hasPhotos && styles.dayCellLogged,
-                    isToday && !hasPhotos && styles.dayCellToday,
-                    isToday && hasPhotos && styles.dayCellTodayLogged,
+                    isToday && styles.dayCellTodayLogged,
                   ]}
                 >
-                  {hasPhotos && latestDayPhoto?.image_url ? (
-                    <Image source={{ uri: latestDayPhoto.image_url }} style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: circleSize / 2 }} />
-                  ) : null}
+                  {hasPhotos && (
+                    <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: circleSize / 2, overflow: 'hidden', backgroundColor: 'rgba(124,92,252,0.25)' }}>
+                      {latestDayPhoto?.photo_url ? (
+                        <Image source={{ uri: latestDayPhoto.photo_url }} style={{ width: '100%', height: '100%' }} />
+                      ) : null}
+                    </View>
+                  )}
                   <Text style={[
                     styles.dayCellNumber,
                     hasPhotos && styles.dayCellNumberLogged,
-                    isToday && !hasPhotos && styles.dayCellNumberToday,
                   ]}>
                     {format(day, 'd')}
                   </Text>
@@ -378,7 +385,7 @@ export default function ProgressScreen() {
 
   // ─── Chart + before/after data ────────────────────────────────────────────
   const chartData = [...photos].reverse().map(p => ({
-    x: p.week_number, y: p.severity_score, label: `W${p.week_number}`,
+    x: p.week_number, y: p.severity_score, label: `Week ${p.week_number}`,
   }));
   const latestPhoto = photos[0];
   const firstPhoto = photos[photos.length - 1];
@@ -421,22 +428,24 @@ export default function ProgressScreen() {
           <View style={styles.card}>
             <View style={styles.monthNav}>
               <TouchableOpacity onPress={() => setCalendarMonth(m => subMonths(m, 1))} style={styles.monthNavBtn}>
-                <ChevronLeftIcon size={28} color="#6B6358" />
+                <ChevronLeftIcon size={28} color={Colors.textSecondary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setCalendarFullscreen(true)} activeOpacity={0.7}>
                 <Text style={styles.monthTitle}>{format(calendarMonth, 'MMMM yyyy')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setCalendarMonth(m => addMonths(m, 1))} style={styles.monthNavBtn}>
-                <ChevronRightIcon size={28} color="#6B6358" />
+                <ChevronRightIcon size={28} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.calendarGrid}>
-              {WEEKDAYS.map(d => (
-                <View key={d} style={styles.dayHeader}>
-                  <Text style={styles.dayHeaderText}>{d}</Text>
-                </View>
-              ))}
+              <View style={{ flexDirection: 'row' }}>
+                {WEEKDAYS.map((d, i) => (
+                  <View key={i} style={styles.dayHeader}>
+                    <Text style={styles.dayHeaderText}>{d}</Text>
+                  </View>
+                ))}
+              </View>
 
               {Array.from({ length: Math.ceil((paddingCells.length + calendarDays.length) / 7) }, (_, rowIdx) => {
                 const startCell = rowIdx * 7;
@@ -467,17 +476,19 @@ export default function ProgressScreen() {
                             style={[
                               styles.dayCellCircle,
                               hasPhotos && styles.dayCellLogged,
-                              isToday && !hasPhotos && styles.dayCellToday,
-                              isToday && hasPhotos && styles.dayCellTodayLogged,
+                              isToday && styles.dayCellTodayLogged,
                             ]}
                           >
-                            {hasPhotos && latestDayPhoto?.image_url ? (
-                              <Image source={{ uri: latestDayPhoto.image_url }} style={styles.dayCellThumb} />
-                            ) : null}
+                            {hasPhotos && (
+                              <View style={styles.dayCellInner}>
+                                {latestDayPhoto?.photo_url ? (
+                                  <Image source={{ uri: latestDayPhoto.photo_url }} style={styles.dayCellThumb} />
+                                ) : null}
+                              </View>
+                            )}
                             <Text style={[
                               styles.dayCellNumber,
                               hasPhotos && styles.dayCellNumberLogged,
-                              isToday && !hasPhotos && styles.dayCellNumberToday,
                             ]}>
                               {format(day, 'd')}
                             </Text>
@@ -494,20 +505,20 @@ export default function ProgressScreen() {
           {/* ── 2. WEEK COMPARISON ───────────────────────────────────────── */}
           {photos.length >= 2 ? (
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>WEEK {currentWeek} COMPARISON</Text>
+              <Text style={styles.sectionLabel}>DAY {photos.length} COMPARISON</Text>
               <View style={styles.comparisonRow}>
                 <TouchableOpacity style={styles.comparisonCard} onPress={() => openModal(0)}>
-                  <Image source={{ uri: latestPhoto.image_url }} style={styles.compareImage} />
+                  <Image source={{ uri: latestPhoto.photo_url }} style={styles.compareImage} />
                   <View style={styles.compareInfo}>
-                    <Text style={styles.compareDateText}>{format(new Date(latestPhoto.created_at), 'MMM d')}</Text>
-                    <Text style={styles.compareWeekText}>Week {currentWeek} · Today</Text>
+                    <Text style={styles.compareDateText}>{format(new Date(latestPhoto.created_at), 'MMMM d')}</Text>
+                    <Text style={styles.compareWeekText}>Day {photos.length} · Today</Text>
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.comparisonCard} onPress={() => openModal(photos.length - 1)}>
-                  <Image source={{ uri: firstPhoto.image_url }} style={styles.compareImage} />
+                  <Image source={{ uri: firstPhoto.photo_url }} style={styles.compareImage} />
                   <View style={styles.compareInfo}>
-                    <Text style={styles.compareDateText}>{format(new Date(firstPhoto.created_at), 'MMM d')}</Text>
-                    <Text style={styles.compareWeekText}>Week {firstPhoto.week_number}</Text>
+                    <Text style={styles.compareDateText}>{format(new Date(firstPhoto.created_at), 'MMMM d')}</Text>
+                    <Text style={styles.compareWeekText}>Day 1</Text>
                   </View>
                 </TouchableOpacity>
               </View>
@@ -515,10 +526,10 @@ export default function ProgressScreen() {
               {/* Metric cards */}
               <View style={styles.metricsRow}>
                 <View style={styles.metricCard}>
-                  <Text style={styles.metricLabel}>Inflammatory lesions</Text>
+                  <Text style={styles.metricLabel}>Active breakouts</Text>
                   {latestPhoto.improvement_percentage != null ? (
                     <View style={styles.metricValueRow}>
-                      <ArrowDownIcon size={14} color={Colors.success} />
+                      <ArrowDownIcon size={14} color={Colors.primary} />
                       <Text style={styles.metricValue}>
                         {` ${Math.abs(latestPhoto.improvement_percentage).toFixed(0)}%`}
                       </Text>
@@ -531,7 +542,7 @@ export default function ProgressScreen() {
                   <Text style={styles.metricLabel}>Redness score</Text>
                   {latestPhoto.severity_score != null ? (
                     <View style={styles.metricValueRow}>
-                      <ArrowDownIcon size={14} color={Colors.success} />
+                      <ArrowDownIcon size={14} color={Colors.primary} />
                       <Text style={styles.metricValue}>
                         {` ${Math.max(0, Math.round((1 - latestPhoto.severity_score / (firstPhoto?.severity_score || 10)) * 100))}%`}
                       </Text>
@@ -620,7 +631,7 @@ export default function ProgressScreen() {
                           >
                             {hasPhoto ? (
                               <View style={styles.fullCalTile}>
-                                <Image source={{ uri: photo.image_url }} style={styles.fullCalTileImage} />
+                                <Image source={{ uri: photo.photo_url }} style={styles.fullCalTileImage} />
                                 <Text style={styles.fullCalTileDay}>{format(day, 'd')}</Text>
                               </View>
                             ) : (
@@ -678,7 +689,7 @@ export default function ProgressScreen() {
                   renderItem={({ item: photo }) => (
                     <ScrollView style={{ width: SCREEN_WIDTH }} showsVerticalScrollIndicator={false} bounces={false}>
                       <Image
-                        source={{ uri: photo.image_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
+                        source={{ uri: photo.photo_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
                         style={{ width: SCREEN_WIDTH, aspectRatio: 1 }}
                         resizeMode="cover"
                       />
@@ -761,7 +772,7 @@ export default function ProgressScreen() {
             }}
             renderItem={({ item: photo }) => (
               <ScrollView style={{ width: SCREEN_WIDTH }} contentContainerStyle={styles.modalItemContent}>
-                <Image source={{ uri: photo.image_url }} style={styles.modalImage} resizeMode="cover" />
+                <Image source={{ uri: photo.photo_url }} style={styles.modalImage} resizeMode="cover" />
 
                 <View style={styles.modalBadgeRow}>
                   <View style={styles.modalBadge}>
@@ -883,7 +894,7 @@ export default function ProgressScreen() {
                   bounces={false}
                 >
                   <Image
-                    source={{ uri: photo.image_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
+                    source={{ uri: photo.photo_url, width: SCREEN_WIDTH, height: SCREEN_WIDTH }}
                     style={styles.expandImage}
                     resizeMode="cover"
                   />
@@ -982,22 +993,23 @@ const styles = StyleSheet.create({
 
   // Cards
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
-    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
     gap: Spacing.md,
   },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: '#1C1C1A' },
-  cardSubtitle: { fontSize: 11, color: '#8A8A7A', marginTop: -Spacing.sm },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  cardSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: -Spacing.sm },
 
   // Calendar
   monthNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   monthNavBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  monthTitle: { fontSize: 18, fontWeight: '600', color: '#1C1C1A' },
+  monthTitle: { fontSize: 18, fontWeight: '600', color: Colors.text },
   calendarGrid: { flexDirection: 'column' },
   dayHeader: { width: DAY_CELL, alignItems: 'center', paddingBottom: Spacing.sm },
-  dayHeaderText: { fontSize: 11, color: '#8A8A7A', fontWeight: '700', letterSpacing: 0.3 },
+  dayHeaderText: { fontSize: 11, color: Colors.white, fontWeight: '700', letterSpacing: 0.3 },
   dayCell: {
     width: DAY_CELL,
     height: DAY_CELL,
@@ -1013,28 +1025,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayCellLogged: {
-    backgroundColor: 'rgba(124,92,252,0.25)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(124,92,252,0.5)',
-  },
-  dayCellToday: {
-    backgroundColor: Colors.secondary,
+    borderWidth: 2,
+    borderColor: Colors.white,
   },
   dayCellTodayLogged: {
-    backgroundColor: Colors.primary,
-    borderWidth: 2,
-    borderColor: Colors.secondary,
+    borderWidth: 2.5,
+    borderColor: Colors.primary,
+  },
+  dayCellInner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: DAY_CELL * 0.39,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(124,92,252,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   dayCellNumber: {
     fontSize: 13,
-    color: '#6B6358',
+    color: Colors.white,
     fontWeight: '500',
   },
   dayCellThumb: {
-    position: 'absolute',
     width: '100%',
     height: '100%',
-    borderRadius: DAY_CELL * 0.39,
+    resizeMode: 'cover',
   },
   dayCellNumberLogged: {
     color: Colors.white,
@@ -1042,10 +1060,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  dayCellNumberToday: {
-    color: Colors.white,
-    fontWeight: '700',
   },
 
   // Week Comparison Section
@@ -1059,30 +1073,32 @@ const styles = StyleSheet.create({
   comparisonRow: { flexDirection: 'row', gap: Spacing.md },
   comparisonCard: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
-    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   compareImage: { width: '100%', aspectRatio: 1 },
   compareInfo: { padding: Spacing.md },
-  compareDateText: { fontSize: 12, fontWeight: '600', color: '#1C1C1A' },
-  compareWeekText: { fontSize: 11, color: '#8A8A7A', marginTop: Spacing.xxs },
+  compareDateText: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  compareWeekText: { fontSize: 11, color: Colors.textSecondary, marginTop: Spacing.xxs },
 
   // Metric cards
   metricsRow: { flexDirection: 'row', gap: Spacing.md },
   metricCard: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  metricLabel: { fontSize: 11, color: '#6B6358', marginBottom: Spacing.xs },
+  metricLabel: { fontSize: 11, color: Colors.textSecondary, marginBottom: Spacing.xs },
   metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  metricValue: { fontSize: 16, fontWeight: '700', color: '#2D9B6E' },
+  metricValue: { fontSize: 16, fontWeight: '700', color: Colors.primary },
 
-  placeholderText: { fontSize: 12, color: '#8A8A7A' },
+  placeholderText: { fontSize: 12, color: Colors.textSecondary },
 
   // Zone rows
   zoneRow: { flexDirection: 'row', gap: Spacing.md, paddingVertical: Spacing.xs, borderBottomWidth: 1, borderBottomColor: '#E8E2D8' },
@@ -1099,7 +1115,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
   },
   modalClose: {
     width: 32,
@@ -1148,7 +1164,7 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: Colors.text,
     textAlignVertical: 'top',
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.card,
   },
   saveNoteBtn: {
     backgroundColor: Colors.primary,

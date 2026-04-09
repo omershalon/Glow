@@ -191,6 +191,7 @@ export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const cameraRef = useRef<CameraView>(null);
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
   const shutterScale = useRef(new Animated.Value(1)).current;
   const shutterFill  = useRef(new Animated.Value(0)).current;
 
@@ -221,19 +222,19 @@ export default function ScanScreen() {
   const [loggingProgress, setLoggingProgress] = useState(false);
 
   const capturePhoto = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || analyzing) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.7,
-        base64: true,
+        base64: false,
       });
 
       if (photo) {
         setPhotoUri(photo.uri);
         setResult(null);
-        await analyzePhoto(photo.uri, photo.base64 ?? undefined);
+        await analyzePhoto(photo.uri);
       }
     } catch (err) {
       console.error('Capture error:', err);
@@ -242,6 +243,7 @@ export default function ScanScreen() {
   };
 
   const pickPhoto = async () => {
+    if (analyzing) return;
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -290,7 +292,7 @@ export default function ScanScreen() {
 
       await supabase.from('progress_photos').insert({
         user_id: user.id,
-        image_url: imageUrl,
+        photo_url: imageUrl,
         week_number: weekNumber,
         severity_score: Math.round(score),
         analysis_notes: analysisResult.analysis_notes ?? '',
@@ -303,6 +305,7 @@ export default function ScanScreen() {
   };
 
   const analyzePhoto = async (uri: string, preloadedBase64?: string) => {
+    if (analyzing) return;
     setAnalyzing(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -311,9 +314,14 @@ export default function ScanScreen() {
         encoding: 'base64' as any,
       });
 
-      const { data, error } = await supabase.functions.invoke('analyze-skin', {
-        body: { image_base64: base64 },
-      });
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), 30000)
+      );
+
+      const { data, error } = await Promise.race([
+        supabase.functions.invoke('analyze-skin', { body: { image_base64: base64 } }),
+        timeout,
+      ]) as any;
 
       if (error) throw error;
       const analysisResult: AnalysisResult = data;
@@ -381,7 +389,8 @@ export default function ScanScreen() {
           severity: result.severity,
           analysis_notes: result.analysis_notes,
           photo_url: photoUrl,
-        });
+          zones: result.zones ?? {},
+        } as any);
 
         if (insertError) throw insertError;
         setProfileSaved(true);
@@ -451,7 +460,7 @@ export default function ScanScreen() {
 
       await supabase.from('progress_photos').insert({
         user_id: user.id,
-        image_url: imageUrl,
+        photo_url: imageUrl,
         week_number: 1,
         severity_score: Math.round(score),
         analysis_notes: result?.analysis_notes ?? '',
@@ -552,7 +561,7 @@ export default function ScanScreen() {
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFillObject}
-          facing="front"
+          facing={cameraFacing}
         />
 
         {/* Overlay on top of fullscreen camera */}
@@ -566,9 +575,7 @@ export default function ScanScreen() {
 
         {/* Header — on top of camera */}
         <View style={[styles.darkHeader, { position: 'absolute', top: insets.top, left: 0, right: 0, zIndex: 10 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <BackArrowIcon size={24} color={Colors.white} />
-          </TouchableOpacity>
+          <View style={styles.backButton} />
           <Text style={styles.darkHeaderTitle}>Skin Scan</Text>
           <View style={styles.backButton} />
         </View>
@@ -577,7 +584,7 @@ export default function ScanScreen() {
         <View style={{ position: 'absolute', bottom: -40, left: 0, right: 0, paddingBottom: insets.bottom + 10, zIndex: 10 }}>
           {/* Camera controls */}
           <View style={styles.cameraControls}>
-            <TouchableOpacity style={styles.sideButton} onPress={resetScan} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.sideButton} onPress={() => setCameraFacing(f => f === 'front' ? 'back' : 'front')} activeOpacity={0.7}>
               <RedoIcon size={22} color={Colors.white} />
             </TouchableOpacity>
             <Pressable
@@ -590,10 +597,10 @@ export default function ScanScreen() {
               </Animated.View>
             </Pressable>
             <TouchableOpacity style={styles.galleryButton} onPress={pickPhoto} activeOpacity={0.7}>
-              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-                <Rect x={2} y={3} width={20} height={18} rx={3} stroke={Colors.white} strokeWidth={1.8} fill="none" />
-                <Circle cx={8.5} cy={9} r={2} fill={Colors.white} />
-                <Path d="M2 18 Q5 13 8 14 Q10 15 12 12 Q15 8 22 15 V18 Q22 21 19 21 L5 21 Q2 21 2 18 Z" fill={Colors.white} />
+              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+                <Rect x={2} y={3} width={20} height={18} rx={4} stroke={Colors.white} strokeWidth={2} fill="none" />
+                <Circle cx={9} cy={9} r={1.8} fill={Colors.white} />
+                <Path d="M5 16L7 13.5Q8 12.5 9 13.5L11 15.5L14 11.5Q15 10.5 16 11.5L19 15V18H5V16Z" fill={Colors.white} />
               </Svg>
             </TouchableOpacity>
           </View>

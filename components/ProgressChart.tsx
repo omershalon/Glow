@@ -139,7 +139,7 @@ export function ProgressChart({ data, height = 200 }: ProgressChartProps) {
                   strokeDasharray="4 4"
                 />
                 <SvgText
-                  x={CHART_PADDING.left - 6}
+                  x={CHART_PADDING.left - 10}
                   y={y + 4}
                   fontSize={10}
                   fill={Colors.textMuted}
@@ -192,10 +192,8 @@ export function ProgressChart({ data, height = 200 }: ProgressChartProps) {
       {/* Legend */}
       <View style={styles.legend}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: Colors.primary }]} />
           <Text style={styles.legendText}>Severity Score</Text>
         </View>
-        <Text style={styles.legendNote}>Lower is better</Text>
       </View>
     </View>
   );

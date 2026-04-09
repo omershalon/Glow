@@ -6,6 +6,7 @@ import {
   Modal,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -85,51 +86,12 @@ export function LoadingOverlay({
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
         <BlurView intensity={20} style={StyleSheet.absoluteFill} />
         <View style={styles.container}>
-          <LinearGradient
-            colors={['#FFFFFF', '#FFF8FB']}
-            style={styles.card}
-          >
-            {/* Animated logo */}
-            <Animated.View style={[styles.logoWrapper, { transform: [{ scale: pulseAnim }] }]}>
-              <LinearGradient
-                colors={[Colors.secondary, Colors.primary]}
-                style={styles.logoCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Animated.Text style={[styles.logoText, { transform: [{ rotate: rotation }] }]}>
-                  ✨
-                </Animated.Text>
-              </LinearGradient>
-            </Animated.View>
+          <View style={styles.card}>
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: Spacing.xl }} />
 
             <Text style={styles.title}>{title}</Text>
             <Text style={styles.subtitle}>{subtitle}</Text>
-
-            {/* Progress dots */}
-            <View style={styles.dotsRow}>
-              {[0, 1, 2].map((i) => (
-                <AnimatedDot key={i} delay={i * 200} />
-              ))}
-            </View>
-
-            {/* Steps */}
-            {steps && steps.length > 0 && (
-              <View style={styles.stepsContainer}>
-                {steps.map((step, i) => (
-                  <View key={i} style={styles.stepRow}>
-                    <View style={[styles.stepDot, i === 0 && styles.stepDotActive]} />
-                    <Text style={[styles.stepText, i === 0 && styles.stepTextActive]}>
-                      {step}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* SkinX branding */}
-            <Text style={styles.brandText}>SkinX</Text>
-          </LinearGradient>
+          </View>
         </View>
       </Animated.View>
     </Modal>
@@ -184,7 +146,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xxl,
     padding: Spacing.xxl,
     alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.lg,
+    minHeight: 280,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.25,

@@ -95,16 +95,6 @@ function MoonIcon({ size = 16, color = Colors.text }: { size?: number; color?: s
   );
 }
 
-function NotepadIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Rect x={5} y={3} width={14} height={18} rx={2} stroke={color} strokeWidth={2} fill="none" />
-      <Line x1={9} y1={8} x2={15} y2={8} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      <Line x1={9} y1={12} x2={15} y2={12} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-      <Line x1={9} y1={16} x2={13} y2={16} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
-    </Svg>
-  );
-}
 
 function ClipboardIcon({ size = 16, color = Colors.text }: { size?: number; color?: string }) {
   return (
@@ -239,8 +229,8 @@ export default function PlanScreen() {
   const getOrCreateTipAnim = (rank: number) => {
     if (!tipAnimsRef[rank]) {
       tipAnimsRef[rank] = {
-        opacity:    new Animated.Value(0),
-        translateY: new Animated.Value(16),
+        opacity:    new Animated.Value(1),
+        translateY: new Animated.Value(0),
       };
     }
     return tipAnimsRef[rank];
@@ -380,16 +370,31 @@ export default function PlanScreen() {
 
   /* ── add / remove routine item ── */
   const toggleItem = async (item: RankedItem) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !plan) return;
+    if (!plan) return;
+
+    // Squish the card
+    if (!cardScaleAnims[item.impact_rank]) cardScaleAnims[item.impact_rank] = new Animated.Value(1);
+    Animated.sequence([
+      Animated.spring(cardScaleAnims[item.impact_rank], { toValue: 0.95, useNativeDriver: true, speed: 50, bounciness: 0 }),
+      Animated.spring(cardScaleAnims[item.impact_rank], { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }),
+    ]).start();
 
     if (routineRanks.has(item.impact_rank)) {
-      const id = routineIdMap[item.impact_rank];
-      await supabase.from('routine_items').update({ is_active: false }).eq('id', id);
+      // Optimistic remove
       setRoutineRanks((p) => { const s = new Set(p); s.delete(item.impact_rank); return s; });
-      setRoutineIdMap((p) => { const m = { ...p }; delete m[item.impact_rank]; return m; });
       setDoneToday((p) => { const s = new Set(p); s.delete(item.impact_rank); return s; });
+      const id = routineIdMap[item.impact_rank];
+      setRoutineIdMap((p) => { const m = { ...p }; delete m[item.impact_rank]; return m; });
+      (supabase.from('routine_items') as any).update({ is_active: false }).eq('id', id);
     } else {
+      // Optimistic add — update UI immediately
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setRoutineRanks((p) => new Set([...p, item.impact_rank]));
+      showToast();
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data } = await supabase
         .from('routine_items')
         .insert({
@@ -405,60 +410,7 @@ export default function PlanScreen() {
         .single();
 
       if (data) {
-        // Soft bubbly vibrations — fast pops that trail off
-        Haptics.selectionAsync();
-        setTimeout(() => Haptics.selectionAsync(), 60);
-        setTimeout(() => Haptics.selectionAsync(), 130);
-        setTimeout(() => Haptics.selectionAsync(), 210);
-        setTimeout(() => Haptics.selectionAsync(), 300);
-        setTimeout(() => Haptics.selectionAsync(), 400);
-        setTimeout(() => Haptics.selectionAsync(), 510);
-        setTimeout(() => Haptics.selectionAsync(), 630);
-        setTimeout(() => Haptics.selectionAsync(), 770);
-        setTimeout(() => Haptics.selectionAsync(), 920);
-        setTimeout(() => Haptics.selectionAsync(), 1090);
-        setTimeout(() => Haptics.selectionAsync(), 1280);
-        setTimeout(() => Haptics.selectionAsync(), 1500);
-
-        // Trigger bubbles + card bounce
-        if (!cardScaleAnims[item.impact_rank]) cardScaleAnims[item.impact_rank] = new Animated.Value(1);
-        cardScaleAnims[item.impact_rank].setValue(1);
-
-        const bubbles = getBubbles(item.impact_rank);
-        bubbles.forEach((b, i) => {
-          b.anim.setValue(0);
-          b.y = (Math.random() - 0.5) * 70;
-          b.size = 8 + Math.random() * 20;
-          b.delay = i * 80 + Math.random() * 60;
-        });
-
-        Animated.parallel([
-          Animated.sequence([
-            Animated.spring(cardScaleAnims[item.impact_rank], {
-              toValue: 1.03, friction: 3, tension: 200, useNativeDriver: true,
-            }),
-            Animated.spring(cardScaleAnims[item.impact_rank], {
-              toValue: 1, friction: 5, tension: 100, useNativeDriver: true,
-            }),
-          ]),
-          Animated.stagger(70,
-            bubbles.map(b =>
-              Animated.sequence([
-                Animated.delay(b.delay),
-                Animated.timing(b.anim, {
-                  toValue: 1, duration: 1200 + Math.random() * 600, useNativeDriver: true,
-                }),
-              ])
-            )
-          ),
-        ]).start();
-
-        setRoutineRanks((p) => new Set([...p, item.impact_rank]));
         setRoutineIdMap((p) => ({ ...p, [item.impact_rank]: data.id as string }));
-        showToast();
-        burstRef.current?.trigger();
-        glowRef.current?.trigger();
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     }
   };
@@ -643,45 +595,21 @@ export default function PlanScreen() {
 
               {items.map((item) => {
                 const added = routineRanks.has(item.impact_rank);
+                if (!cardScaleAnims[item.impact_rank]) cardScaleAnims[item.impact_rank] = new Animated.Value(1);
                 const cardScale = cardScaleAnims[item.impact_rank];
-                const bubbles = getBubbles(item.impact_rank);
                 const tipAnim = getOrCreateTipAnim(item.impact_rank);
                 return (
                   <Animated.View
                     key={item.impact_rank}
-                    style={{ opacity: tipAnim.opacity, transform: [{ translateY: tipAnim.translateY }, ...(cardScale ? [{ scale: cardScale }] : [])] }}
+                    style={{ opacity: tipAnim.opacity, transform: [{ translateY: tipAnim.translateY }, { scale: cardScale }] }}
                   >
                     <TouchableOpacity
-                      style={[styles.pickCard, { overflow: 'hidden' }, added && { backgroundColor: 'rgba(52, 211, 153, 0.12)', borderColor: 'rgba(52, 211, 153, 0.35)' }]}
+                      style={[styles.pickCard, added && { backgroundColor: 'rgba(124, 92, 252, 0.15)', borderColor: 'rgba(124, 92, 252, 0.45)' }]}
                       onPress={() => setSelectedPick(item)}
-                      activeOpacity={0.7}
+                      onPressIn={() => Animated.spring(cardScale, { toValue: 0.96, useNativeDriver: true, speed: 50, bounciness: 0 }).start()}
+                      onPressOut={() => Animated.spring(cardScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 4 }).start()}
+                      activeOpacity={1}
                     >
-                      {/* Small bubbles float from + button across and off the card */}
-                      {bubbles.map((b, i) => (
-                        <Animated.View
-                          key={i}
-                          pointerEvents="none"
-                          style={{
-                            position: 'absolute',
-                            right: 26,
-                            top: '50%',
-                            width: b.size,
-                            height: b.size,
-                            borderRadius: b.size / 2,
-                            backgroundColor: i % 3 === 0
-                              ? 'rgba(76, 200, 140, 0.45)'
-                              : i % 3 === 1
-                              ? 'rgba(56, 180, 120, 0.35)'
-                              : 'rgba(100, 220, 160, 0.40)',
-                            transform: [
-                              { translateX: b.anim.interpolate({ inputRange: [0, 0.1, 1], outputRange: [0, -20, -450] }) },
-                              { translateY: b.anim.interpolate({ inputRange: [0, 0.3, 0.6, 1], outputRange: [0, b.y * 0.4, b.y, b.y * 1.3] }) },
-                              { scale: b.anim.interpolate({ inputRange: [0, 0.1, 0.3, 0.8, 1], outputRange: [0, 1.2, 1, 0.8, 0.4] }) },
-                            ],
-                            opacity: b.anim.interpolate({ inputRange: [0, 0.08, 0.2, 0.7, 1], outputRange: [0, 0.8, 0.7, 0.3, 0] }),
-                          }}
-                        />
-                      ))}
                       <View style={styles.pickCardBody}>
                         <Text style={styles.pickTitle}>{item.title}</Text>
                         <Text style={styles.pickSubtitle} numberOfLines={1}>{item.rationale}</Text>
@@ -693,9 +621,15 @@ export default function PlanScreen() {
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           activeOpacity={0.7}
                         >
-                          <Text style={[styles.circleBtnIcon, added && styles.circleBtnIconAdded]}>
-                            {added ? '✓' : '+'}
-                          </Text>
+                          {added ? (
+                            <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+                              <Path d="M2 7l3.5 3.5L12 3" stroke={Colors.white} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                            </Svg>
+                          ) : (
+                            <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+                              <Path d="M7 2v10M2 7h10" stroke={Colors.textMuted} strokeWidth={2} strokeLinecap="round" />
+                            </Svg>
+                          )}
                         </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
@@ -717,15 +651,17 @@ export default function PlanScreen() {
         /* ── ROUTINE EMPTY ── */
         <View style={styles.centered}>
           <View style={styles.emptyIconWrap}>
-            <NotepadIcon size={52} color={Colors.textMuted} />
+            <Svg width={52} height={52} viewBox="0 0 24 24" fill="none">
+              <Rect x={3} y={3} width={18} height={18} rx={3} stroke={Colors.white} strokeWidth={2} fill="none" />
+              <Line x1={7} y1={8}  x2={17} y2={8}  stroke={Colors.white} strokeWidth={1.8} strokeLinecap="round" />
+              <Line x1={7} y1={12} x2={17} y2={12} stroke={Colors.white} strokeWidth={1.8} strokeLinecap="round" />
+              <Line x1={7} y1={16} x2={17} y2={16} stroke={Colors.white} strokeWidth={1.8} strokeLinecap="round" />
+            </Svg>
           </View>
           <Text style={styles.emptyTitle}>Nothing added yet</Text>
           <Text style={styles.emptySubtitle}>
             Go to Tips and tap + on anything you want to start doing
           </Text>
-          <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.addMoreText}>+ Add more from Tips</Text>
-          </TouchableOpacity>
         </View>
 
       ) : (
@@ -746,7 +682,7 @@ export default function PlanScreen() {
           {doneCount === totalCount && totalCount > 0 && (
             <View style={styles.allDoneCard}>
               <View style={styles.allDoneIconWrap}>
-                <StarIcon size={32} color={Colors.success} />
+                <StarIcon size={32} color={Colors.primary} />
               </View>
               <View>
                 <Text style={styles.allDoneTitle}>All done for today!</Text>
@@ -803,9 +739,6 @@ export default function PlanScreen() {
             </View>
           ))}
 
-          <TouchableOpacity style={styles.addMoreLink} onPress={() => setActiveTab('picks')}>
-            <Text style={styles.addMoreText}>+ Add more from Tips</Text>
-          </TouchableOpacity>
         </ScrollView>
       )}
 
@@ -866,7 +799,7 @@ export default function PlanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xxl, gap: Spacing.lg },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xxl, gap: Spacing.lg, paddingBottom: 80 },
 
   /* ── header ── */
   header: {
@@ -1163,10 +1096,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.success + '40',
+    borderColor: Colors.primary + '40',
   },
   allDoneIconWrap: { width: 32, height: 32, alignItems: 'center' as const, justifyContent: 'center' as const },
-  allDoneTitle: { ...Typography.labelLarge, color: Colors.success },
+  allDoneTitle: { ...Typography.labelLarge, color: Colors.primary },
   allDoneSubtext: { ...Typography.bodySmall, color: Colors.textMuted },
 
   /* ── add more link ── */

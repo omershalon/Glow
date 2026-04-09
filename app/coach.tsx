@@ -10,7 +10,11 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  ActionSheetIOS,
+  Alert,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path, Line, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -119,6 +123,50 @@ export default function CoachScreen() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [attachments, setAttachments] = useState<{ uri: string; base64?: string }[]>([]);
+
+  const handlePlusPress = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Upload Photos & Files'],
+          cancelButtonIndex: 0,
+        },
+        async (buttonIndex) => {
+          if (buttonIndex === 1) await pickFromCamera();
+          if (buttonIndex === 2) await pickFromLibrary();
+        }
+      );
+    } else {
+      Alert.alert('Add Attachment', '', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: pickFromCamera },
+        { text: 'Upload Photos & Files', onPress: pickFromLibrary },
+      ]);
+    }
+  };
+
+  const pickFromCamera = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setAttachments(prev => [...prev, { uri: result.assets[0].uri, base64: result.assets[0].base64 ?? undefined }]);
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      base64: true,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setAttachments(prev => [...prev, ...result.assets.map(a => ({ uri: a.uri, base64: a.base64 ?? undefined }))]);
+    }
+  };
 
   // Speech recognition events
   useSpeechRecognitionEvent('result', (event) => {
@@ -148,6 +196,10 @@ export default function CoachScreen() {
   }, []);
 
   const startListening = async () => {
+    if (!ExpoSpeechRecognitionModule) {
+      Alert.alert('Not available', 'Voice input requires a development build and is not supported in Expo Go.');
+      return;
+    }
     const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!granted) return;
 
@@ -162,6 +214,7 @@ export default function CoachScreen() {
   };
 
   const stopListening = () => {
+    if (!ExpoSpeechRecognitionModule) return;
     ExpoSpeechRecognitionModule.stop();
     setListening(false);
   };
@@ -189,8 +242,10 @@ export default function CoachScreen() {
 
     const userMsg: Message = { role: 'user', content: msgText };
     const newMessages = [...messages, userMsg];
+    const currentAttachments = [...attachments];
     setMessages(newMessages);
     setInput('');
+    setAttachments([]);
     setSending(true);
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -210,6 +265,7 @@ export default function CoachScreen() {
           user_id: userId,
           message: msgText,
           history: messages.slice(-10),
+          images: currentAttachments.map(a => a.base64).filter(Boolean),
         }),
       });
 
@@ -248,19 +304,23 @@ export default function CoachScreen() {
             <CloseIcon size={22} color={Colors.white} />
           </TouchableOpacity>
           <Text style={styles.voiceHeaderTitle}>Skin Coach</Text>
-          <TouchableOpacity onPress={() => { stopSpeaking(); setVoiceMode(false); }} style={styles.closeBtn}>
-            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', fontWeight: '600' }}>Text</Text>
-          </TouchableOpacity>
+          <View style={styles.closeBtn} />
         </View>
 
-        {/* Center — avatar + status */}
+        {/* Center — mic icon + status */}
         <View style={styles.voiceCenter}>
           <View style={styles.voiceAvatarWrap}>
             <PulsingRing active={speaking || sending || listening} />
-            <CoachAvatar size={80} />
+            <TouchableOpacity
+              style={[styles.micButton, listening && styles.micButtonActive, { width: 80, height: 80, borderRadius: 40 }]}
+              activeOpacity={0.8}
+              onPress={listening ? stopListening : startListening}
+            >
+              <MicIcon size={36} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
           <Text style={styles.voiceStatus}>
-            {sending ? 'Thinking...' : speaking ? 'Speaking...' : listening ? 'Listening...' : 'Tap the mic to talk'}
+            {sending ? 'Thinking...' : speaking ? 'Speaking...' : listening ? 'Listening...' : 'Tap to speak'}
           </Text>
           {/* Last message preview */}
           {messages.length > 0 && (
@@ -270,23 +330,12 @@ export default function CoachScreen() {
           )}
         </View>
 
-        {/* Mic button */}
         <View style={styles.voiceBottom}>
           {speaking && (
             <TouchableOpacity style={styles.stopBtn} onPress={stopSpeaking} activeOpacity={0.8}>
               <Text style={styles.stopBtnText}>Stop</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={[styles.micButton, listening && styles.micButtonActive]}
-            activeOpacity={0.8}
-            onPress={listening ? stopListening : startListening}
-          >
-            <MicIcon size={32} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text style={styles.micHint}>
-            {listening ? 'Listening... tap to stop' : 'Tap to speak'}
-          </Text>
           {transcript.length > 0 && (
             <Text style={styles.transcriptPreview}>"{transcript}"</Text>
           )}
@@ -391,12 +440,37 @@ export default function CoachScreen() {
         )}
       </ScrollView>
 
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <View style={styles.attachmentRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}>
+            {attachments.map((att, i) => (
+              <View key={i} style={styles.attachmentThumb}>
+                <Image source={{ uri: att.uri }} style={styles.attachmentImage} />
+                <TouchableOpacity
+                  style={styles.attachmentRemove}
+                  onPress={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                >
+                  <Text style={styles.attachmentRemoveText}>×</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Input */}
       <View style={[styles.inputContainer, { paddingBottom: insets.bottom + Spacing.sm }]}>
+        <TouchableOpacity style={styles.plusBtn} activeOpacity={0.7} onPress={handlePlusPress}>
+          <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+            <Line x1={9} y1={2} x2={9} y2={16} stroke={Colors.white} strokeWidth={2} strokeLinecap="round" />
+            <Line x1={2} y1={9} x2={16} y2={9} stroke={Colors.white} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+        </TouchableOpacity>
         <View style={styles.textInputWrapper}>
           <TextInput
             style={styles.textInput}
-            placeholder="Ask about your skin..."
+            placeholder="Ask about your skin"
             placeholderTextColor={Colors.textMuted}
             value={input}
             onChangeText={setInput}
@@ -404,13 +478,15 @@ export default function CoachScreen() {
             onSubmitEditing={() => sendMessage()}
             returnKeyType="send"
           />
-          <TouchableOpacity
-            style={styles.micBtn}
-            onPress={() => setVoiceMode(true)}
-            activeOpacity={0.8}
-          >
-            <MicIcon size={18} color={Colors.primary} />
-          </TouchableOpacity>
+          {!input.trim() && (
+            <TouchableOpacity
+              style={styles.micBtn}
+              onPress={() => setVoiceMode(true)}
+              activeOpacity={0.8}
+            >
+              <MicIcon size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
         <TouchableOpacity
           style={[styles.sendBtn, (!input.trim() || sending) && styles.sendBtnDisabled]}
@@ -569,10 +645,46 @@ const styles = StyleSheet.create({
   userText: { color: Colors.white },
   assistantText: { color: Colors.text },
 
+  /* Attachments */
+  attachmentRow: {
+    backgroundColor: Colors.card,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  attachmentThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  attachmentImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  attachmentRemove: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  attachmentRemoveText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+
   /* Input */
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.sm,
     backgroundColor: Colors.card,
@@ -583,10 +695,20 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: 11,
+    paddingTop: 0,
+    paddingBottom: 0,
+    height: 40,
     ...Typography.bodyMedium,
     color: Colors.text,
     maxHeight: 100,
+  },
+  plusBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.cardGlass,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   textInputWrapper: {
     flex: 1,
@@ -594,6 +716,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.xl,
+    height: 40,
   },
   micBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -641,6 +764,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'rgba(255,255,255,0.7)',
+    marginTop: -8,
   },
   voiceLastMsg: {
     fontSize: 14,
@@ -667,7 +791,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#2D4A3E',
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     ...Shadows.lg,

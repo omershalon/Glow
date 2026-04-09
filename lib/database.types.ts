@@ -49,6 +49,7 @@ export type Database = {
           severity: Severity;
           analysis_notes: string;
           photo_url: string | null;
+          zones: Record<string, { severity: string; note: string }>;
           created_at: string;
         };
         Insert: {
@@ -59,6 +60,7 @@ export type Database = {
           severity: Severity;
           analysis_notes: string;
           photo_url?: string | null;
+          zones?: Record<string, { severity: string; note: string }>;
           created_at?: string;
         };
         Update: {
@@ -69,6 +71,7 @@ export type Database = {
           severity?: Severity;
           analysis_notes?: string;
           photo_url?: string | null;
+          zones?: Record<string, { severity: string; note: string }>;
           created_at?: string;
         };
         Relationships: [];

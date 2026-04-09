@@ -92,13 +92,6 @@ export default function PickDetailModal({ visible, pick, onClose, onToggleRoutin
             <Text style={styles.rationale}>{pick.rationale}</Text>
           </View>
 
-          {/* Impact rank */}
-          <View style={styles.impactRow}>
-            <View style={styles.impactBadge}>
-              <Text style={styles.impactText}>#{pick.impact_rank} Impact</Text>
-            </View>
-          </View>
-
           {/* Divider */}
           <View style={styles.divider} />
 

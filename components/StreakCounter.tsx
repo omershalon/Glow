@@ -53,7 +53,7 @@ async function computeStreak(userId: string): Promise<number> {
   return streak;
 }
 
-export default function StreakCounter() {
+export default function StreakCounter({ compact = false }: { compact?: boolean }) {
   const [streak, setStreak] = useState(0);
   const [isNewDay, setIsNewDay] = useState(false);
   const flameScale = useRef(new Animated.Value(1)).current;
@@ -104,7 +104,7 @@ export default function StreakCounter() {
   if (streak === 0) return null;
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, compact && styles.rowCompact]}>
       <Animated.Text style={[styles.flame, { transform: [{ scale: flameScale }] }]}>🔥</Animated.Text>
       <Text style={styles.count}>{streak}</Text>
       <Text style={styles.label}>DAY STREAK</Text>
@@ -124,6 +124,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(124,92,252,0.25)',
     alignSelf: 'flex-start',
+  },
+  rowCompact: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   flame: {
     fontSize: 14,
