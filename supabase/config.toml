@@ -48,3 +48,6 @@ verify_jwt = false
 
 [functions.track-progress]
 verify_jwt = false
+
+[functions.gemini-review-scan]
+verify_jwt = false
