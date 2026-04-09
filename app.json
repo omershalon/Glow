@@ -51,7 +51,8 @@
           "speechRecognitionPermission": "Glow needs speech recognition to understand your voice"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./modules/yolo-detector"
     ],
     "scheme": "glow"
   }
