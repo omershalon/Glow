@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["YoloDetectorModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.yolodetector.YoloDetectorModule"]
+  }
+}
