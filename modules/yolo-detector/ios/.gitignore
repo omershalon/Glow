@@ -1,0 +1,3 @@
+# This file intentionally left minimal — the parent .gitignore ignores ios/ dirs,
+# but this native module's ios source must be tracked.
+!*
