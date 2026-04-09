@@ -238,6 +238,57 @@ export type Database = {
         };
         Relationships: [];
       };
+      scan_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          created_at: string;
+          front_image_url: string;
+          left_image_url: string;
+          right_image_url: string;
+          model_detections: Record<string, any>;
+          reviewed_detections: Record<string, any> | null;
+          severity: 'mild' | 'moderate' | 'severe' | null;
+          severity_score: number | null;
+          total_spots: number | null;
+          confirmed_spots: number | null;
+          ai_added_spots: number | null;
+          primary_acne_type: string | null;
+          description: string | null;
+          zone_breakdown: any[] | null;
+          skin_insights: Record<string, any> | null;
+          recommendations: any[] | null;
+          skin_plan: Record<string, any> | null;
+          matched_products: any[] | null;
+          status: 'processing' | 'completed' | 'failed';
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          front_image_url: string;
+          left_image_url: string;
+          right_image_url: string;
+          model_detections: Record<string, any>;
+          status?: 'processing' | 'completed' | 'failed';
+        };
+        Update: {
+          reviewed_detections?: Record<string, any>;
+          severity?: string;
+          severity_score?: number;
+          total_spots?: number;
+          confirmed_spots?: number;
+          ai_added_spots?: number;
+          primary_acne_type?: string;
+          description?: string;
+          zone_breakdown?: any[];
+          skin_insights?: Record<string, any>;
+          recommendations?: any[];
+          skin_plan?: Record<string, any>;
+          matched_products?: any[];
+          status?: 'processing' | 'completed' | 'failed';
+        };
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };
