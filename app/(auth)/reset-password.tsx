@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     ...Typography.bodyLarge,
     color: Colors.text,
-    backgroundColor: Colors.cardSubtle,
+    backgroundColor: Colors.card,
   },
   inputFocused: { borderColor: Colors.primary, backgroundColor: Colors.white },
   inputError: { borderColor: Colors.error },

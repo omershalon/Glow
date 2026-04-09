@@ -36,7 +36,7 @@ export default function RootLayout() {
 
     if (!session && !inAuthGroup) {
       // Not logged in — send to login
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/welcome');
     } else if (session && inAuthGroup) {
       // Logged in — send to app
       router.replace('/(tabs)');
