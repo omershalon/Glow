@@ -78,7 +78,7 @@ export async function createScanSession(
     .single();
 
   if (error) throw new Error(`Create session failed: ${error.message}`);
-  return data.id;
+  return (data as any).id;
 }
 
 /**
@@ -123,8 +123,8 @@ export async function updateScanSession(
   sessionId: string,
   response: ScanResponse
 ): Promise<void> {
-  const { error } = await supabase
-    .from('scan_sessions')
+  const { error } = await (supabase
+    .from('scan_sessions') as any)
     .update({
       reviewed_detections: response.reviewed_detections,
       severity: response.summary.severity,
@@ -140,7 +140,7 @@ export async function updateScanSession(
       skin_plan: response.skin_plan,
       matched_products: response.matched_products ?? null,
       status: 'completed',
-    } as any)
+    })
     .eq('id', sessionId);
 
   if (error) throw new Error(`Update session failed: ${error.message}`);
@@ -150,9 +150,9 @@ export async function updateScanSession(
  * Mark a session as failed.
  */
 export async function failScanSession(sessionId: string): Promise<void> {
-  await supabase
-    .from('scan_sessions')
-    .update({ status: 'failed' } as any)
+  await (supabase
+    .from('scan_sessions') as any)
+    .update({ status: 'failed' })
     .eq('id', sessionId);
 }
 
