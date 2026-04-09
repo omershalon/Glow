@@ -253,6 +253,7 @@ export type Database = {
           total_spots: number | null;
           confirmed_spots: number | null;
           ai_added_spots: number | null;
+          ai_corrected_spots: number | null;
           primary_acne_type: string | null;
           description: string | null;
           zone_breakdown: any[] | null;
@@ -278,6 +279,7 @@ export type Database = {
           total_spots?: number;
           confirmed_spots?: number;
           ai_added_spots?: number;
+          ai_corrected_spots?: number;
           primary_acne_type?: string;
           description?: string;
           zone_breakdown?: any[];

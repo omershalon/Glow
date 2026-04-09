@@ -21,6 +21,7 @@ CREATE TABLE scan_sessions (
   total_spots INTEGER,
   confirmed_spots INTEGER,
   ai_added_spots INTEGER,
+  ai_corrected_spots INTEGER,
   primary_acne_type TEXT,
   description TEXT,
 

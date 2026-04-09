@@ -136,13 +136,16 @@ export interface ScanSession {
   front_image_url: string;
   left_image_url: string;
   right_image_url: string;
-  model_detections: Record<ViewAngle, Detection[]>;
+  model_detections: Record<ViewAngle, Detection[]> & {
+    image_dimensions?: Record<ViewAngle, { width: number; height: number }>;
+  };
   reviewed_detections: Record<ViewAngle, ReviewedDetection[]> | null;
   severity: 'mild' | 'moderate' | 'severe' | null;
   severity_score: number | null;
   total_spots: number | null;
   confirmed_spots: number | null;
   ai_added_spots: number | null;
+  ai_corrected_spots: number | null;
   primary_acne_type: string | null;
   description: string | null;
   zone_breakdown: ZoneBreakdown[] | null;

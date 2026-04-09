@@ -22,6 +22,9 @@ import type {
   ReviewedDetection,
   ZoneBreakdown,
   Recommendation,
+  SkinPlan,
+  SkinPlanRoutineStep,
+  SkinPlanWeeklyTreatment,
 } from '@/lib/scan-types';
 import { CLASS_COLORS as COLORS } from '@/lib/scan-types';
 
@@ -65,6 +68,22 @@ export default function ScanResultsScreen() {
         <ScreenBackground preset="scan" />
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading results...</Text>
+      </View>
+    );
+  }
+
+  if (session.status === 'failed') {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <ScreenBackground preset="scan" />
+        <Text style={[styles.loadingText, { fontSize: 40, marginBottom: 12 }]}>😔</Text>
+        <Text style={[styles.headerTitle, { marginBottom: 8 }]}>Scan Failed</Text>
+        <Text style={[styles.loadingText, { textAlign: 'center', paddingHorizontal: 40 }]}>
+          Something went wrong analyzing your scan. Please try again.
+        </Text>
+        <TouchableOpacity style={[styles.ctaButton, { marginTop: 24, paddingHorizontal: 40 }]} onPress={() => router.back()}>
+          <Text style={styles.ctaText}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -146,9 +165,9 @@ export default function ScanResultsScreen() {
             {detections.filter((d) => d.status !== 'removed').map((d, i) => {
               const color = COLORS[d.className] ?? '#FFFFFF';
               // Scale bbox from original image coords to display coords
-              // Use reasonable defaults for image dimensions
-              const imgW = 1280;
-              const imgH = 1706;
+              const dims = (session.model_detections as any)?.image_dimensions?.[activeView];
+              const imgW = dims?.width ?? 1280;
+              const imgH = dims?.height ?? 1280;
               const scaleX = IMAGE_WIDTH / imgW;
               const scaleY = IMAGE_HEIGHT / imgH;
               const x = d.bbox[0] * scaleX;
@@ -316,6 +335,55 @@ export default function ScanResultsScreen() {
                 <Text style={styles.recDesc}>{rec.description}</Text>
               </View>
             ))}
+          </>
+        )}
+
+        {/* Skin Plan */}
+        {session.skin_plan && (
+          <>
+            <Text style={styles.sectionTitle}>YOUR SKIN PLAN</Text>
+            {(session.skin_plan as SkinPlan).morning_routine?.length > 0 && (
+              <View style={styles.planSection}>
+                <Text style={styles.planSectionTitle}>☀️  Morning Routine</Text>
+                {(session.skin_plan as SkinPlan).morning_routine.map((step: SkinPlanRoutineStep, i: number) => (
+                  <View key={i} style={styles.planStep}>
+                    <View style={styles.planStepNum}><Text style={styles.planStepNumText}>{i + 1}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planStepTitle}>{step.step}</Text>
+                      <Text style={styles.planStepReason}>{step.reason}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+            {(session.skin_plan as SkinPlan).evening_routine?.length > 0 && (
+              <View style={styles.planSection}>
+                <Text style={styles.planSectionTitle}>🌙  Evening Routine</Text>
+                {(session.skin_plan as SkinPlan).evening_routine.map((step: SkinPlanRoutineStep, i: number) => (
+                  <View key={i} style={styles.planStep}>
+                    <View style={styles.planStepNum}><Text style={styles.planStepNumText}>{i + 1}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planStepTitle}>{step.step}</Text>
+                      <Text style={styles.planStepReason}>{step.reason}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+            {(session.skin_plan as SkinPlan).weekly_treatments?.length > 0 && (
+              <View style={styles.planSection}>
+                <Text style={styles.planSectionTitle}>📅  Weekly Treatments</Text>
+                {(session.skin_plan as SkinPlan).weekly_treatments.map((t: SkinPlanWeeklyTreatment, i: number) => (
+                  <View key={i} style={styles.planStep}>
+                    <View style={styles.planStepNum}><Text style={styles.planStepNumText}>{i + 1}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planStepTitle}>{t.treatment} — {t.frequency}</Text>
+                      <Text style={styles.planStepReason}>{t.reason}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </>
         )}
 
@@ -506,6 +574,35 @@ const styles = StyleSheet.create({
   },
   recTitle: { ...Typography.headlineSmall, color: Colors.text, marginBottom: Spacing.xs },
   recDesc: { ...Typography.bodySmall, color: Colors.textSecondary, lineHeight: 20 },
+
+  // Skin Plan
+  planSection: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  planSectionTitle: { ...Typography.headlineSmall, color: Colors.text, marginBottom: Spacing.md },
+  planStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  planStepNum: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  planStepNumText: { ...Typography.labelSmall, color: Colors.primary },
+  planStepTitle: { ...Typography.bodyMedium, color: Colors.text },
+  planStepReason: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2 },
 
   // CTA
   ctaButton: {

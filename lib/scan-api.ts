@@ -58,10 +58,15 @@ export async function createScanSession(
   imageUrls: Record<ViewAngle, string>,
   detections: Record<ViewAngle, DetectionResult>
 ): Promise<string> {
-  const modelDetections: Record<ViewAngle, Detection[]> = {
+  const modelDetections = {
     front: detections.front.detections,
     left: detections.left.detections,
     right: detections.right.detections,
+    image_dimensions: {
+      front: { width: detections.front.imageWidth, height: detections.front.imageHeight },
+      left: { width: detections.left.imageWidth, height: detections.left.imageHeight },
+      right: { width: detections.right.imageWidth, height: detections.right.imageHeight },
+    },
   };
 
   const { data, error } = await supabase
@@ -132,6 +137,7 @@ export async function updateScanSession(
       total_spots: response.summary.total_spots,
       confirmed_spots: response.summary.confirmed_spots,
       ai_added_spots: response.summary.ai_added_spots,
+      ai_corrected_spots: response.summary.ai_corrected_spots ?? 0,
       primary_acne_type: response.summary.primary_acne_type,
       description: response.summary.description,
       zone_breakdown: response.zone_breakdown,

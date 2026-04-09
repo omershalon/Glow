@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,28 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate the request
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
       return new Response(
@@ -33,7 +56,8 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { user_id, images, detections, image_dimensions } = body;
+    const { images, detections, image_dimensions } = body;
+    const user_id = user.id; // Use authenticated user ID, not client-supplied
 
     if (!images?.front || !images?.left || !images?.right) {
       return new Response(
@@ -204,6 +228,23 @@ Return ONLY the JSON object. No markdown, no explanation.`;
       } else {
         throw new Error('Could not parse Gemini response as JSON');
       }
+    }
+
+    // Validate required fields in the Gemini response
+    const missing: string[] = [];
+    if (!result.reviewed_detections || typeof result.reviewed_detections !== 'object') missing.push('reviewed_detections');
+    if (!result.summary || typeof result.summary !== 'object') missing.push('summary');
+    if (!result.zone_breakdown || !Array.isArray(result.zone_breakdown)) missing.push('zone_breakdown');
+    if (!result.skin_insights || typeof result.skin_insights !== 'object') missing.push('skin_insights');
+    if (!result.recommendations || !Array.isArray(result.recommendations)) missing.push('recommendations');
+    if (!result.skin_plan || typeof result.skin_plan !== 'object') missing.push('skin_plan');
+
+    if (missing.length > 0) {
+      console.error('[gemini-review-scan] Gemini response missing fields:', missing);
+      return new Response(
+        JSON.stringify({ error: 'Gemini returned incomplete response', missing_fields: missing }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log('[gemini-review-scan] success, total spots:', result.summary?.total_spots);
