@@ -17,8 +17,26 @@ interface NativeDetectionResult {
   inferenceTimeMs: number;
 }
 
-interface YoloDetectorModuleType {
+export interface YoloDetectorModuleType {
   detect(imageUri: string, confidenceThreshold: number): Promise<NativeDetectionResult>;
 }
 
-export default requireNativeModule<YoloDetectorModuleType>('YoloDetector');
+// Lazy-load the native module so the app doesn't crash on startup
+// if the module isn't available (e.g. in Expo Go or dev builds without native rebuild)
+let _module: YoloDetectorModuleType | null = null;
+
+export function getModule(): YoloDetectorModuleType {
+  if (!_module) {
+    _module = requireNativeModule<YoloDetectorModuleType>('YoloDetector');
+  }
+  return _module;
+}
+
+export function isAvailable(): boolean {
+  try {
+    getModule();
+    return true;
+  } catch {
+    return false;
+  }
+}

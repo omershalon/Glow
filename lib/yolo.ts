@@ -1,18 +1,22 @@
-import { detect as nativeDetect } from '../modules/yolo-detector';
+import { detect as nativeDetect, isAvailable } from '../modules/yolo-detector';
 import type { Detection, DetectionResult, ViewAngle, CapturedImage } from './scan-types';
 
+export { isAvailable as isYoloAvailable };
+
+function emptyResult(image: CapturedImage): DetectionResult {
+  return { detections: [], imageWidth: image.width, imageHeight: image.height, inferenceTimeMs: 0 };
+}
+
 export async function runDetection(image: CapturedImage): Promise<DetectionResult> {
+  if (!isAvailable()) {
+    console.warn('[YOLO] Native module not available — skipping on-device detection');
+    return emptyResult(image);
+  }
   try {
     return await nativeDetect(image.uri);
   } catch (error) {
     console.error('[YOLO] Detection failed:', error);
-    // Return empty result on failure so the pipeline can continue with Gemini only
-    return {
-      detections: [],
-      imageWidth: image.width,
-      imageHeight: image.height,
-      inferenceTimeMs: 0,
-    };
+    return emptyResult(image);
   }
 }
 
