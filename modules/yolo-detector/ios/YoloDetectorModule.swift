@@ -1,11 +1,11 @@
 import ExpoModulesCore
 import CoreML
-import Vision
 import UIKit
 import Accelerate
 
 public class YoloDetectorModule: Module {
-  private var model: VNCoreMLModel?
+  private var mlModel: MLModel?
+  private let modelInputSize: Int = 1280
 
   public func definition() -> ModuleDefinition {
     Name("YoloDetector")
@@ -17,31 +17,27 @@ public class YoloDetectorModule: Module {
     }
   }
 
-  private func getModel() throws -> VNCoreMLModel {
-    if let cached = model { return cached }
+  private func getModel() throws -> MLModel {
+    if let cached = mlModel { return cached }
 
     guard let modelURL = Bundle.main.url(forResource: "yolo-acne", withExtension: "mlmodelc") else {
-      // Try mlpackage
       guard let pkgURL = Bundle.main.url(forResource: "yolo-acne", withExtension: "mlpackage") else {
         throw NSError(domain: "YoloDetector", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model file not found in bundle"])
       }
       let compiledURL = try MLModel.compileModel(at: pkgURL)
-      let mlModel = try MLModel(contentsOf: compiledURL)
-      let vnModel = try VNCoreMLModel(for: mlModel)
-      self.model = vnModel
-      return vnModel
+      let model = try MLModel(contentsOf: compiledURL)
+      self.mlModel = model
+      return model
     }
 
-    let mlModel = try MLModel(contentsOf: modelURL)
-    let vnModel = try VNCoreMLModel(for: mlModel)
-    self.model = vnModel
-    return vnModel
+    let model = try MLModel(contentsOf: modelURL)
+    self.mlModel = model
+    return model
   }
 
   private func runDetection(imageUri: String, confidenceThreshold: Float, promise: Promise) {
     let startTime = CFAbsoluteTimeGetCurrent()
 
-    // Load image
     guard let image = loadImage(from: imageUri) else {
       promise.reject("ERR_IMAGE", "Could not load image from URI: \(imageUri)")
       return
@@ -56,69 +52,139 @@ public class YoloDetectorModule: Module {
     let imageHeight = cgImage.height
 
     do {
-      let vnModel = try getModel()
+      let model = try getModel()
 
-      let request = VNCoreMLRequest(model: vnModel) { request, error in
-        if let error = error {
-          promise.reject("ERR_INFERENCE", "Inference failed: \(error.localizedDescription)")
-          return
-        }
-
-        let inferenceTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-
-        guard let results = request.results as? [VNRecognizedObjectObservation] else {
-          promise.resolve([
-            "detections": [] as [[String: Any]],
-            "imageWidth": imageWidth,
-            "imageHeight": imageHeight,
-            "inferenceTimeMs": inferenceTime
-          ])
-          return
-        }
-
-        let classNames = ["blackheads", "dark spot", "nodules", "papules", "pustules", "whiteheads"]
-        var detections: [[String: Any]] = []
-
-        for observation in results {
-          guard let topLabel = observation.labels.first,
-                observation.confidence >= confidenceThreshold else { continue }
-
-          let classIndex = classNames.firstIndex(of: topLabel.identifier) ?? -1
-
-          // VNRecognizedObjectObservation bbox is normalized with origin at bottom-left
-          let box = observation.boundingBox
-          let x1 = box.origin.x * CGFloat(imageWidth)
-          let y1 = (1.0 - box.origin.y - box.height) * CGFloat(imageHeight)
-          let x2 = (box.origin.x + box.width) * CGFloat(imageWidth)
-          let y2 = (1.0 - box.origin.y) * CGFloat(imageHeight)
-
-          detections.append([
-            "x1": Double(x1),
-            "y1": Double(y1),
-            "x2": Double(x2),
-            "y2": Double(y2),
-            "classIndex": classIndex,
-            "className": topLabel.identifier,
-            "confidence": Double(observation.confidence)
-          ])
-        }
-
-        promise.resolve([
-          "detections": detections,
-          "imageWidth": imageWidth,
-          "imageHeight": imageHeight,
-          "inferenceTimeMs": inferenceTime
-        ])
+      // Preprocess: resize to 1280x1280 and create CVPixelBuffer
+      guard let pixelBuffer = preprocessImage(cgImage: cgImage) else {
+        promise.reject("ERR_PREPROCESS", "Failed to preprocess image")
+        return
       }
 
-      request.imageCropAndScaleOption = .scaleFill
+      // Run inference
+      let inputName = model.modelDescription.inputDescriptionsByName.keys.first ?? "images"
+      let input = try MLDictionaryFeatureProvider(dictionary: [inputName: MLFeatureValue(pixelBuffer: pixelBuffer)])
+      let output = try model.prediction(from: input)
 
-      let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-      try handler.perform([request])
+      let inferenceTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+
+      // Parse output: end2end model outputs [1, 300, 6] as MLMultiArray
+      // Each detection: [x1, y1, x2, y2, confidence, classIndex]
+      let detections = parseEndToEndOutput(output: output, imageWidth: imageWidth, imageHeight: imageHeight, confidenceThreshold: confidenceThreshold)
+
+      promise.resolve([
+        "detections": detections,
+        "imageWidth": imageWidth,
+        "imageHeight": imageHeight,
+        "inferenceTimeMs": inferenceTime
+      ])
 
     } catch {
       promise.reject("ERR_MODEL", "Model error: \(error.localizedDescription)")
     }
+  }
+
+  private func preprocessImage(cgImage: CGImage) -> CVPixelBuffer? {
+    let size = modelInputSize
+    var pixelBuffer: CVPixelBuffer?
+    let attrs: [String: Any] = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
+    ]
+    let status = CVPixelBufferCreate(kCFAllocatorDefault, size, size, kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer)
+    guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+    guard let context = CGContext(
+      data: CVPixelBufferGetBaseAddress(buffer),
+      width: size,
+      height: size,
+      bitsPerComponent: 8,
+      bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+    ) else { return nil }
+
+    context.interpolationQuality = .high
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+    return buffer
+  }
+
+  private func parseEndToEndOutput(output: MLFeatureProvider, imageWidth: Int, imageHeight: Int, confidenceThreshold: Float) -> [[String: Any]] {
+    let classNames = ["blackheads", "dark spot", "nodules", "papules", "pustules", "whiteheads"]
+    var detections: [[String: Any]] = []
+
+    // Try to get the output MLMultiArray
+    guard let outputName = output.featureNames.first(where: { _ in true }),
+          let multiArray = output.featureValue(for: outputName)?.multiArrayValue else {
+      return detections
+    }
+
+    let shape = multiArray.shape.map { $0.intValue }
+
+    // End2end model: shape is [1, 300, 6] where 6 = [x1, y1, x2, y2, conf, classIdx]
+    // Or shape might be [300, 6] after squeezing batch dim
+    let numDetections: Int
+    let valuesPerDetection: Int
+    let batchOffset: Int
+
+    if shape.count == 3 {
+      // [1, 300, 6]
+      numDetections = shape[1]
+      valuesPerDetection = shape[2]
+      batchOffset = 0
+    } else if shape.count == 2 {
+      // [300, 6]
+      numDetections = shape[0]
+      valuesPerDetection = shape[1]
+      batchOffset = 0
+    } else {
+      return detections
+    }
+
+    guard valuesPerDetection >= 6 else { return detections }
+
+    let ptr = multiArray.dataPointer.assumingMemoryBound(to: Float.self)
+    let scaleX = Float(imageWidth) / Float(modelInputSize)
+    let scaleY = Float(imageHeight) / Float(modelInputSize)
+
+    for i in 0..<numDetections {
+      let baseIdx: Int
+      if shape.count == 3 {
+        baseIdx = i * valuesPerDetection
+      } else {
+        baseIdx = i * valuesPerDetection
+      }
+
+      let x1 = ptr[baseIdx + 0]
+      let y1 = ptr[baseIdx + 1]
+      let x2 = ptr[baseIdx + 2]
+      let y2 = ptr[baseIdx + 3]
+      let confidence = ptr[baseIdx + 4]
+      let classIdx = Int(ptr[baseIdx + 5])
+
+      // Skip low confidence or padding detections (end2end pads with zeros)
+      guard confidence >= confidenceThreshold, classIdx >= 0, classIdx < classNames.count else { continue }
+
+      // Scale from model input space (1280x1280) to original image dimensions
+      let scaledX1 = Double(x1 * scaleX)
+      let scaledY1 = Double(y1 * scaleY)
+      let scaledX2 = Double(x2 * scaleX)
+      let scaledY2 = Double(y2 * scaleY)
+
+      detections.append([
+        "x1": scaledX1,
+        "y1": scaledY1,
+        "x2": scaledX2,
+        "y2": scaledY2,
+        "classIndex": classIdx,
+        "className": classNames[classIdx],
+        "confidence": Double(confidence)
+      ])
+    }
+
+    return detections
   }
 
   private func loadImage(from uri: String) -> UIImage? {
