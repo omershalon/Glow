@@ -14,20 +14,19 @@ function detectMediaType(b64: string): string {
   return 'image/jpeg';
 }
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
 serve(async (req) => {
-  console.log('[gemini-review-scan] request received');
+  console.log('[gemini-review-scan] request received, method:', req.method);
 
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Authenticate the request
+    // ── Step 1: Authenticate ──
+    console.log('[gemini-review-scan] step 1: auth');
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
+      console.error('[gemini-review-scan] no authorization header');
       return new Response(
         JSON.stringify({ error: 'Missing authorization header' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -41,23 +40,44 @@ serve(async (req) => {
     });
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
+      console.error('[gemini-review-scan] auth failed:', authError?.message);
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized', details: authError?.message }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    console.log('[gemini-review-scan] authenticated user:', user.id);
 
-    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    // ── Step 2: Check API key ──
+    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    console.log('[gemini-review-scan] step 2: ANTHROPIC_API_KEY present:', !!apiKey);
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY not set' }),
+        JSON.stringify({ error: 'ANTHROPIC_API_KEY not set in Supabase secrets' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const body = await req.json();
+    // ── Step 3: Parse body ──
+    console.log('[gemini-review-scan] step 3: parsing body');
+    let body;
+    try {
+      body = await req.json();
+    } catch (parseErr) {
+      console.error('[gemini-review-scan] body parse error:', parseErr);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON body', details: String(parseErr) }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { images, detections, image_dimensions } = body;
-    const user_id = user.id; // Use authenticated user ID, not client-supplied
+
+    console.log('[gemini-review-scan] images present:', {
+      front: !!images?.front, frontLen: images?.front?.length ?? 0,
+      left: !!images?.left, leftLen: images?.left?.length ?? 0,
+      right: !!images?.right, rightLen: images?.right?.length ?? 0,
+    });
 
     if (!images?.front || !images?.left || !images?.right) {
       return new Response(
@@ -66,17 +86,20 @@ serve(async (req) => {
       );
     }
 
-    console.log('[gemini-review-scan] building Gemini request');
+    // ── Step 4: Build Claude request ──
+    console.log('[gemini-review-scan] step 4: building Claude request');
 
-    // Build the Gemini multimodal request
-    const imageParts = ['front', 'left', 'right'].flatMap((angle) => [
+    const imageContent = ['front', 'left', 'right'].flatMap((angle) => [
       {
-        inlineData: {
-          mimeType: detectMediaType(images[angle]),
+        type: 'image' as const,
+        source: {
+          type: 'base64' as const,
+          media_type: detectMediaType(images[angle]),
           data: images[angle],
         },
       },
       {
+        type: 'text' as const,
         text: `[${angle.toUpperCase()} VIEW — ${image_dimensions?.[angle]?.width ?? 'unknown'}x${image_dimensions?.[angle]?.height ?? 'unknown'}px]\nModel detections for this view:\n${JSON.stringify(detections?.[angle] ?? [], null, 2)}`,
       },
     ]);
@@ -123,17 +146,17 @@ Return ONLY valid JSON matching this exact structure:
         "status": "confirmed"
       }
     ],
-    "left": [...],
-    "right": [...]
+    "left": [],
+    "right": []
   },
   "summary": {
-    "severity": "mild|moderate|severe",
-    "severity_score": 0-100,
-    "total_spots": number,
-    "confirmed_spots": number,
-    "ai_added_spots": number,
-    "ai_corrected_spots": number,
-    "primary_acne_type": "string",
+    "severity": "mild",
+    "severity_score": 35,
+    "total_spots": 12,
+    "confirmed_spots": 10,
+    "ai_added_spots": 2,
+    "ai_corrected_spots": 0,
+    "primary_acne_type": "comedonal",
     "description": "2-3 sentence overview"
   },
   "zone_breakdown": [
@@ -154,8 +177,8 @@ Return ONLY valid JSON matching this exact structure:
     {
       "title": "Recommendation title",
       "description": "Why and how",
-      "priority": "high|medium|low",
-      "category": "product|lifestyle|professional",
+      "priority": "high",
+      "category": "product",
       "product_keywords": ["niacinamide", "serum"]
     }
   ],
@@ -177,60 +200,91 @@ Rules for reviewed_detections:
 - For spots you ADD that the model missed: set source="ai", status="added", provide estimated bbox, className, confidence=1.0, aiConfidence="high" or "medium"
 - For detections you CORRECT (only if fully certain): set source="model", status="corrected", include originalClass with the model's label
 - For false positives you REMOVE (only if fully certain): set source="model", status="removed"
+- If there are no detections for a view, return an empty array for that view
 
 Return ONLY the JSON object. No markdown, no explanation.`;
 
-    const geminiBody = {
-      contents: [
+    const claudeBody = {
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 8192,
+      messages: [
         {
-          parts: [
-            ...imageParts,
-            { text: prompt },
+          role: 'user',
+          content: [
+            ...imageContent,
+            { type: 'text', text: prompt },
           ],
         },
       ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
-      },
     };
 
-    console.log('[gemini-review-scan] calling Gemini API...');
-    const geminiRes = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const claudeBodyStr = JSON.stringify(claudeBody);
+    console.log('[gemini-review-scan] step 5: calling Claude API, request size:', claudeBodyStr.length, 'bytes');
+
+    // ── Step 5: Call Claude ──
+    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: claudeBodyStr,
     });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error('[gemini-review-scan] Gemini API error:', geminiRes.status, errText);
+    console.log('[gemini-review-scan] Claude response status:', claudeRes.status);
+
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.error('[gemini-review-scan] Claude API error:', claudeRes.status, errText);
       return new Response(
-        JSON.stringify({ error: 'Gemini API error', status: geminiRes.status, details: errText }),
+        JSON.stringify({
+          error: 'Claude API error',
+          api_status: claudeRes.status,
+          details: errText.substring(0, 500),
+        }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const geminiData = await geminiRes.json();
-    const resultText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    // ── Step 6: Parse Claude response ──
+    console.log('[gemini-review-scan] step 6: parsing Claude response');
+    const claudeData = await claudeRes.json();
+    const resultText = claudeData.content?.find((b: { type: string }) => b.type === 'text')?.text ?? '';
 
-    console.log('[gemini-review-scan] Gemini response length:', resultText.length);
+    console.log('[gemini-review-scan] Claude response length:', resultText.length);
+
+    if (!resultText) {
+      const stopReason = claudeData.stop_reason;
+      console.error('[gemini-review-scan] Empty Claude response, stop_reason:', stopReason);
+      return new Response(
+        JSON.stringify({
+          error: 'Claude returned empty response',
+          stop_reason: stopReason,
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     let result;
     try {
-      result = JSON.parse(resultText);
+      // Claude sometimes wraps JSON in markdown code fences
+      const cleaned = resultText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      result = JSON.parse(cleaned);
     } catch {
-      // Try to extract JSON from the response
       const jsonMatch = resultText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         result = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error('Could not parse Gemini response as JSON');
+        console.error('[gemini-review-scan] Could not parse response:', resultText.substring(0, 200));
+        return new Response(
+          JSON.stringify({ error: 'Could not parse Claude response as JSON', snippet: resultText.substring(0, 200) }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
-    // Validate required fields in the Gemini response
+    // ── Step 7: Validate ──
     const missing: string[] = [];
     if (!result.reviewed_detections || typeof result.reviewed_detections !== 'object') missing.push('reviewed_detections');
     if (!result.summary || typeof result.summary !== 'object') missing.push('summary');
@@ -240,21 +294,21 @@ Return ONLY the JSON object. No markdown, no explanation.`;
     if (!result.skin_plan || typeof result.skin_plan !== 'object') missing.push('skin_plan');
 
     if (missing.length > 0) {
-      console.error('[gemini-review-scan] Gemini response missing fields:', missing);
+      console.error('[gemini-review-scan] response missing fields:', missing, 'keys:', Object.keys(result));
       return new Response(
-        JSON.stringify({ error: 'Gemini returned incomplete response', missing_fields: missing }),
+        JSON.stringify({ error: 'AI returned incomplete response', missing_fields: missing }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[gemini-review-scan] success, total spots:', result.summary?.total_spots);
+    console.log('[gemini-review-scan] success! total_spots:', result.summary?.total_spots);
 
     return new Response(
       JSON.stringify(result),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('[gemini-review-scan] error:', error);
+    console.error('[gemini-review-scan] unhandled error:', error, error?.stack);
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: String(error) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

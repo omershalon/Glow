@@ -117,7 +117,24 @@ export async function callGeminiReview(
     body: payload,
   });
 
-  if (error) throw new Error(`Gemini review failed: ${error.message}`);
+  if (error) {
+    // supabase.functions.invoke() swallows the real error body on non-2xx responses.
+    // The actual server response is in error.context (a Response object).
+    let details = error.message;
+    try {
+      const ctx = (error as any).context;
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.json();
+        details = body?.error
+          ? `${body.error}${body.details ? ': ' + body.details : ''}${body.missing_fields ? ' (missing: ' + body.missing_fields.join(', ') + ')' : ''}`
+          : JSON.stringify(body);
+      }
+    } catch {
+      // context wasn't readable — keep the original message
+    }
+    throw new Error(`Gemini review failed: ${details}`);
+  }
+
   return data as ScanResponse;
 }
 

@@ -178,7 +178,7 @@ The prompt sends Gemini:
 2. Structured detection JSON showing what the model found per image
 3. Instructions:
    - Review each detection for accuracy
-   - Identify spots/types the model missed
+   - Identify spots/types the model missed (the model rarely has false positives but sometimes misses spots)
    - Correct misclassifications only when fully certain
    - Otherwise keep model results unchanged
    - Generate overall analysis, zone breakdown, insights, plan

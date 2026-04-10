@@ -181,11 +181,12 @@ export default function ScanScreen() {
         pathname: '/scan-results',
         params: { sessionId },
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Analysis error:', err);
+      const message = err?.message || String(err);
       Alert.alert(
-        'Analysis failed',
-        'Could not complete the skin analysis. Please try again.'
+        'Analysis Failed',
+        message.length > 300 ? message.substring(0, 300) + '…' : message
       );
     } finally {
       setProcessing(false);
