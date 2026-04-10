@@ -57,8 +57,9 @@ export type ImageSet = Record<ViewAngle, CapturedImage>;
 
 export interface ScanRequest {
   user_id: string;
-  images: Record<ViewAngle, string>; // base64
-  detections: Record<ViewAngle, Detection[]>;
+  /** Only the front image is sent to Gemini (resized). Left/right are excluded. */
+  front_image: string; // base64, resized to GEMINI_MAX_DIM
+  detections: Record<ViewAngle, Detection[]>; // all 3 angles, full Ultralytics output
   image_dimensions: Record<ViewAngle, { width: number; height: number }>;
 }
 
@@ -125,6 +126,12 @@ export interface GeminiResponse {
 export interface ScanResponse extends GeminiResponse {
   session_id: string;
   matched_products?: any[];
+  /** True if Gemini was skipped and a prior session's analysis was reused */
+  cached?: boolean;
+  /** Human-readable reason Gemini was skipped */
+  skip_reason?: string;
+  /** True if Gemini was actually called this session */
+  gemini_called?: boolean;
 }
 
 // ── Scan session (database row) ──

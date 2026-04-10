@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import * as ImageManipulator from 'expo-image-manipulator';
 import type {
   ViewAngle,
   CapturedImage,
@@ -8,6 +9,13 @@ import type {
   ScanResponse,
   ScanSession,
 } from './scan-types';
+
+// ── Gemini image config (mirrors edge function CONFIG) ──
+
+/** Max width or height in pixels for the front image sent to Gemini */
+const GEMINI_MAX_DIM = 800;
+/** JPEG quality for the Gemini image (0–1) */
+const GEMINI_IMAGE_QUALITY = 0.75;
 
 /**
  * Upload a single scan image to Supabase Storage.
@@ -87,20 +95,60 @@ export async function createScanSession(
 }
 
 /**
+ * Resize the front image to GEMINI_MAX_DIM on its longest side.
+ * Returns raw base64 (no data-URI prefix).
+ */
+async function resizeFrontForGemini(image: CapturedImage): Promise<string> {
+  const longest = Math.max(image.width, image.height);
+
+  // Already small enough — use as-is
+  if (longest <= GEMINI_MAX_DIM) {
+    console.log('[scan-api] front image already small enough, skipping resize');
+    return image.base64;
+  }
+
+  const scale = GEMINI_MAX_DIM / longest;
+  const targetWidth = Math.round(image.width * scale);
+  const targetHeight = Math.round(image.height * scale);
+
+  console.log(
+    `[scan-api] resizing front image ${image.width}x${image.height} → ${targetWidth}x${targetHeight} for Gemini`
+  );
+
+  const result = await ImageManipulator.manipulateAsync(
+    image.uri,
+    [{ resize: { width: targetWidth, height: targetHeight } }],
+    {
+      compress: GEMINI_IMAGE_QUALITY,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    }
+  );
+
+  if (!result.base64) throw new Error('Image resize returned no base64');
+
+  const originalKB = Math.round((image.base64.length * 3) / 4 / 1024);
+  const resizedKB = Math.round((result.base64.length * 3) / 4 / 1024);
+  console.log(`[scan-api] resize complete: ${originalKB}KB → ${resizedKB}KB`);
+
+  return result.base64;
+}
+
+/**
  * Call the gemini-review-scan edge function.
+ * Sends only the resized front image + all 3 Ultralytics detection results.
  */
 export async function callGeminiReview(
   userId: string,
   images: Record<ViewAngle, CapturedImage>,
   detections: Record<ViewAngle, DetectionResult>
 ): Promise<ScanResponse> {
+  // Resize front image — only image sent to Gemini
+  const frontImageResized = await resizeFrontForGemini(images.front);
+
   const payload: ScanRequest = {
     user_id: userId,
-    images: {
-      front: images.front.base64,
-      left: images.left.base64,
-      right: images.right.base64,
-    },
+    front_image: frontImageResized,
     detections: {
       front: detections.front.detections,
       left: detections.left.detections,
@@ -113,6 +161,9 @@ export async function callGeminiReview(
     },
   };
 
+  const payloadKB = Math.round(JSON.stringify(payload).length / 1024);
+  console.log(`[scan-api] calling gemini-review-scan, payload size: ${payloadKB}KB`);
+
   const { data, error } = await supabase.functions.invoke('gemini-review-scan', {
     body: payload,
   });
@@ -121,21 +172,32 @@ export async function callGeminiReview(
     // supabase.functions.invoke() swallows the real error body on non-2xx responses.
     // The actual server response is in error.context (a Response object).
     let details = error.message;
+    let hint = '';
     try {
       const ctx = (error as any).context;
       if (ctx && typeof ctx.json === 'function') {
         const body = await ctx.json();
+        hint = body?.hint ?? '';
         details = body?.error
-          ? `${body.error}${body.details ? ': ' + body.details : ''}${body.missing_fields ? ' (missing: ' + body.missing_fields.join(', ') + ')' : ''}`
+          ? `${body.error}${body.details ? ': ' + body.details : ''}${body.missing_fields ? ' (missing: ' + body.missing_fields.join(', ') + ')' : ''}${body.skip_reason ? ' [cached: ' + body.skip_reason + ']' : ''}`
           : JSON.stringify(body);
       }
     } catch {
       // context wasn't readable — keep the original message
     }
-    throw new Error(`Gemini review failed: ${details}`);
+    // If the edge function gave us a user-friendly hint, show that instead of raw JSON
+    const userMessage = hint || details;
+    throw new Error(`Gemini review failed: ${userMessage}`);
   }
 
-  return data as ScanResponse;
+  const response = data as ScanResponse;
+  if (response.cached) {
+    console.log(`[scan-api] Gemini skipped — using cached response. Reason: ${response.skip_reason}`);
+  } else {
+    console.log('[scan-api] Gemini called and responded successfully');
+  }
+
+  return response;
 }
 
 /**
@@ -180,7 +242,7 @@ export async function failScanSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Full pipeline: upload images → create session → call Gemini → update session.
+ * Full pipeline: upload images → create session → call Gemini (or use cache) → update session.
  */
 export async function runScanPipeline(
   userId: string,
