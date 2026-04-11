@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
       return new Response(JSON.stringify({ reply: 'The skin coach is temporarily unavailable. Please try again later.' }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -98,31 +98,40 @@ USER'S SKIN DATA:${userContext || '\nNo skin profile yet — tell them to take a
     }
     messages.push({ role: 'user', content: message });
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    // Build Gemini conversation: system prompt + history + current message
+    const geminiContents = [];
+
+    // System instruction as first user message
+    geminiContents.push({ role: 'user', parts: [{ text: systemPrompt + '\n\nRespond as the Skin Coach from now on.' }] });
+    geminiContents.push({ role: 'model', parts: [{ text: 'Got it! I\'m your Skin Coach. What\'s going on with your skin?' }] });
+
+    // Chat history
+    for (const msg of messages) {
+      geminiContents.push({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+      });
+    }
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 150,
-        system: systemPrompt,
-        messages,
+        contents: geminiContents,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
       }),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      console.error('Claude API error:', res.status, err);
+      console.error('Gemini API error:', res.status, err);
       return new Response(JSON.stringify({ reply: 'I had trouble thinking of a response. Please try again in a moment.' }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const claude = await res.json();
-    const reply = claude.content?.find((b: { type: string }) => b.type === 'text')?.text ?? 'I had trouble responding. Please try again.';
+    const gemini = await res.json();
+    const reply = gemini.candidates?.[0]?.content?.parts?.[0]?.text ?? 'I had trouble responding. Please try again.';
 
     return new Response(JSON.stringify({ reply }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -160,7 +160,7 @@ export default function ScanResultsScreen() {
 
         {/* Image with bounding box overlay */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: imageUrl }} style={styles.scanImage} resizeMode="cover" />
+          <Image key={activeView} source={{ uri: imageUrl }} style={styles.scanImage} resizeMode="cover" />
           <Svg style={StyleSheet.absoluteFill} width={IMAGE_WIDTH} height={IMAGE_HEIGHT}>
             {detections.filter((d) => d.status !== 'removed').map((d, i) => {
               const color = COLORS[d.className] ?? '#FFFFFF';

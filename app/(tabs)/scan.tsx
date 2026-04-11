@@ -322,11 +322,11 @@ export default function ScanScreen() {
 
       {/* Center instruction */}
       <View style={styles.instructionOverlay}>
-        {currentStep === 1 && <ArrowIcon direction="left" size={40} color="rgba(255,255,255,0.5)" />}
+        {currentStep === 1 && <ArrowIcon direction="right" size={40} color="rgba(255,255,255,0.5)" />}
         <View style={styles.instructionBadge}>
           <Text style={styles.instructionText}>{STEPS[currentStep].instruction}</Text>
         </View>
-        {currentStep === 2 && <ArrowIcon direction="right" size={40} color="rgba(255,255,255,0.5)" />}
+        {currentStep === 2 && <ArrowIcon direction="left" size={40} color="rgba(255,255,255,0.5)" />}
       </View>
 
       {/* Corner brackets */}

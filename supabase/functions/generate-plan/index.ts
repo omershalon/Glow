@@ -13,9 +13,9 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), {
+      return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not set' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -165,30 +165,24 @@ Return ONLY a JSON array. No markdown. No explanation. No backticks.
 pillar values: product | diet | herbal | lifestyle
 Exactly 8 items. At least 1 per pillar. impact_rank 1 = highest priority.`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1500,
-        temperature: 0.9,
-        messages: [{ role: 'user', content: prompt }],
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 1500 },
       }),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      return new Response(JSON.stringify({ error: 'Claude API error', details: err }), {
+      return new Response(JSON.stringify({ error: 'Gemini API error', details: err }), {
         status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const claude = await res.json();
-    const text = claude.content?.find((b: { type: string }) => b.type === 'text')?.text ?? '';
+    const gemini = await res.json();
+    const text = gemini.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
     let ranked_items;
     try {

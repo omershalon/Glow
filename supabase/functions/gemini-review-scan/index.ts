@@ -41,9 +41,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-const ANTHROPIC_MODEL = 'claude-opus-4-6';
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /** Maximum retries for transient 429/529 errors */
 const MAX_RETRIES = 2;
@@ -236,70 +235,57 @@ function buildCachedResponse(prev: PreviousSession, current: AllDetections): obj
 
 // ── Retry helper ──
 
-interface AnthropicCallResult {
+interface GeminiCallResult {
   ok: boolean;
   status: number;
   body: any;
   retryable: boolean;
-  retryAfterMs?: number;
   attempts: number;
 }
 
 /**
- * Call the Anthropic Messages API with retry for transient 429s and 529s.
+ * Call Gemini API with retry for transient errors.
  */
-async function callAnthropicWithRetry(
+async function callGeminiWithRetry(
   apiKey: string,
-  requestBody: object
-): Promise<AnthropicCallResult> {
-  let lastResult: AnthropicCallResult | null = null;
+  contents: any[],
+  generationConfig?: object
+): Promise<GeminiCallResult> {
+  let lastResult: GeminiCallResult | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
-    console.log(`[gemini-review-scan] Anthropic API call — model: ${ANTHROPIC_MODEL}, attempt ${attempt}/${MAX_RETRIES + 1}`);
+    console.log(`[gemini-review-scan] Gemini API call — model: ${GEMINI_MODEL}, attempt ${attempt}/${MAX_RETRIES + 1}`);
 
-    const res = await fetch(ANTHROPIC_API_URL, {
+    const res = await fetch(`${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-      },
-      body: JSON.stringify(requestBody),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        generationConfig: generationConfig ?? { temperature: 0.3, maxOutputTokens: 4096 },
+      }),
     });
 
-    console.log(`[gemini-review-scan] Anthropic response status: ${res.status}`);
+    console.log(`[gemini-review-scan] Gemini response status: ${res.status}`);
 
     if (res.ok) {
       const data = await res.json();
-      return { ok: true, status: res.status, body: data, retryable: false, attempts: attempt };
+      // Extract text from Gemini response format and wrap in Anthropic-compatible shape
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      return { ok: true, status: res.status, body: { content: [{ type: 'text', text }] }, retryable: false, attempts: attempt };
     }
 
-    // Non-retryable errors — don't retry
-    if (res.status !== 429 && res.status !== 529) {
+    if (res.status !== 429 && res.status !== 503) {
       const errText = await res.text();
       return { ok: false, status: res.status, body: errText, retryable: false, attempts: attempt };
     }
 
-    // 429 / 529 — retryable
     const errText = await res.text();
-    const retryAfterHeader = res.headers.get('retry-after');
-    const retryAfterMs = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : undefined;
+    console.log(`[gemini-review-scan] ${res.status} received on attempt ${attempt}: ${errText.substring(0, 200)}`);
 
-    console.log(`[gemini-review-scan] ${res.status} received on attempt ${attempt}`);
-    console.log(`[gemini-review-scan]   Retry-After: ${retryAfterHeader ?? 'not set'}`);
-    console.log(`[gemini-review-scan]   error body (first 300 chars): ${errText.substring(0, 300)}`);
-
-    lastResult = {
-      ok: false,
-      status: res.status,
-      body: errText,
-      retryable: true,
-      retryAfterMs,
-      attempts: attempt,
-    };
+    lastResult = { ok: false, status: res.status, body: errText, retryable: true, attempts: attempt };
 
     if (attempt <= MAX_RETRIES) {
-      const delay = retryAfterMs ?? RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
       console.log(`[gemini-review-scan] retrying in ${delay}ms`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -323,46 +309,36 @@ serve(async (req) => {
 
   // ── GET /test — lightweight Claude API health check ──
   if (req.method === 'GET') {
-    console.log('[gemini-review-scan] GET /test — running Claude API health check');
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!anthropicKey) {
+    console.log('[gemini-review-scan] GET /test — running Gemini API health check');
+    const testKey = Deno.env.get('GEMINI_API_KEY');
+    if (!testKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: 'ANTHROPIC_API_KEY not set' }),
+        JSON.stringify({ ok: false, error: 'GEMINI_API_KEY not set' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     try {
-      const testRes = await fetch(ANTHROPIC_API_URL, {
+      const testRes = await fetch(`${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${testKey}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: ANTHROPIC_MODEL,
-          max_tokens: 32,
-          messages: [{ role: 'user', content: 'Reply with exactly: {"status":"ok"}' }],
+          contents: [{ parts: [{ text: 'Reply with exactly: {"status":"ok"}' }] }],
+          generationConfig: { maxOutputTokens: 32 },
         }),
       });
       const testStatus = testRes.status;
       const testText = await testRes.text();
-      console.log(`[gemini-review-scan] test ${ANTHROPIC_MODEL}: status ${testStatus}`);
+      console.log(`[gemini-review-scan] test ${GEMINI_MODEL}: status ${testStatus}`);
 
       return new Response(
         JSON.stringify({
           ok: testRes.ok,
-          model: ANTHROPIC_MODEL,
-          key_prefix: anthropicKey.substring(0, 8) + '...',
-          key_length: anthropicKey.length,
+          model: GEMINI_MODEL,
           status: testStatus,
           ...(testRes.ok
-            ? { message: 'Claude API is reachable and responding' }
+            ? { message: 'Gemini API is reachable and responding' }
             : { error: testText.substring(0, 300) }),
-          hint: testRes.ok
-            ? 'Claude API is available. Scan should work.'
-            : 'Claude API returned an error. Check your ANTHROPIC_API_KEY in Supabase secrets.',
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -408,12 +384,12 @@ serve(async (req) => {
     }
     console.log('[gemini-review-scan] authenticated user:', user.id);
 
-    // ── Step 2: ANTHROPIC_API_KEY ──
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    console.log('[gemini-review-scan] step 2: ANTHROPIC_API_KEY present:', !!anthropicKey, 'length:', anthropicKey?.length ?? 0);
+    // ── Step 2: GEMINI_API_KEY ──
+    const anthropicKey = Deno.env.get('GEMINI_API_KEY');
+    console.log('[gemini-review-scan] step 2: GEMINI_API_KEY present:', !!anthropicKey, 'length:', anthropicKey?.length ?? 0);
     if (!anthropicKey) {
       return new Response(
-        JSON.stringify({ error: 'ANTHROPIC_API_KEY not set in Supabase secrets' }),
+        JSON.stringify({ error: 'GEMINI_API_KEY not set in Supabase secrets' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -658,79 +634,53 @@ CRITICAL constraints:
   - YOLO false positive (only if 100% certain): source="model", status="removed"
   - Empty arrays are valid if no detections`;
 
-    // Build the content array — images first (labeled), then text prompt
-    type ContentBlock =
-      | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
-      | { type: 'text'; text: string };
-
-    const userContent: ContentBlock[] = [
-      { type: 'image', source: { type: 'base64', media_type: frontMediaType, data: front_image } },
+    // Build Gemini content parts — images + text
+    const geminiParts: any[] = [
+      { inline_data: { mime_type: frontMediaType, data: front_image } },
     ];
     if (hasLeftImage) {
-      userContent.push({ type: 'image', source: { type: 'base64', media_type: leftMediaType, data: left_image } });
+      geminiParts.push({ inline_data: { mime_type: leftMediaType, data: left_image } });
     }
     if (hasRightImage) {
-      userContent.push({ type: 'image', source: { type: 'base64', media_type: rightMediaType, data: right_image } });
+      geminiParts.push({ inline_data: { mime_type: rightMediaType, data: right_image } });
     }
-    userContent.push({ type: 'text', text: userPrompt });
+    geminiParts.push({ text: systemPrompt + '\n\n' + userPrompt });
 
-    const anthropicBody = {
-      model: ANTHROPIC_MODEL,
-      max_tokens: 8192,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userContent,
-        },
-      ],
-    };
+    const geminiContents = [{ parts: geminiParts }];
 
-    const payloadSizeKB = Math.round(JSON.stringify(anthropicBody).length / 1024);
-    console.log('[gemini-review-scan] Anthropic payload info:');
-    console.log('  model:', ANTHROPIC_MODEL);
-    console.log('  images sent:', imageCount, '(front:', front_image.length, 'left:', left_image?.length ?? 0, 'right:', right_image?.length ?? 0, ')');
-    console.log('  media_types — front:', frontMediaType, 'left:', leftMediaType, 'right:', rightMediaType);
+    console.log('[gemini-review-scan] Gemini payload info:');
+    console.log('  model:', GEMINI_MODEL);
+    console.log('  images sent:', imageCount);
     console.log('  detections — front:', current.front.length, 'left:', current.left.length, 'right:', current.right.length);
-    console.log('  total payload size:', payloadSizeKB, 'KB');
 
-    // ── Step 6: Call Anthropic API (with retry) ──
-    console.log('[gemini-review-scan] step 6: calling Anthropic API (with retry support)');
-    const anthropicResult = await callAnthropicWithRetry(anthropicKey, anthropicBody);
+    // ── Step 6: Call Gemini API (with retry) ──
+    console.log('[gemini-review-scan] step 6: calling Gemini API (with retry support)');
+    const geminiResult = await callGeminiWithRetry(anthropicKey, geminiContents, { temperature: 0.3, maxOutputTokens: 8192 });
 
-    console.log(`[gemini-review-scan] Anthropic call completed — status: ${anthropicResult.status}, attempts: ${anthropicResult.attempts}`);
+    console.log(`[gemini-review-scan] Gemini call completed — status: ${geminiResult.status}, attempts: ${geminiResult.attempts}`);
 
-    if (!anthropicResult.ok) {
-      const errBody = typeof anthropicResult.body === 'string' ? anthropicResult.body : JSON.stringify(anthropicResult.body);
-      console.error('[gemini-review-scan] Anthropic API error status:', anthropicResult.status);
-      console.error('[gemini-review-scan] Anthropic API error body:', errBody.substring(0, 1000));
+    if (!geminiResult.ok) {
+      const errBody = typeof geminiResult.body === 'string' ? geminiResult.body : JSON.stringify(geminiResult.body);
+      console.error('[gemini-review-scan] Gemini API error:', geminiResult.status, errBody.substring(0, 500));
 
       let userHint = '';
-      if (anthropicResult.status === 429) {
-        userHint = `Claude API rate limit hit after ${anthropicResult.attempts} attempts. Try again in a minute.`;
-      } else if (anthropicResult.status === 529) {
-        userHint = 'Claude API is temporarily overloaded. Please try again shortly.';
-      } else if (anthropicResult.status === 401) {
-        userHint = 'ANTHROPIC_API_KEY is invalid or revoked. Please update your key in Supabase secrets.';
-      } else if (anthropicResult.status === 403) {
-        userHint = 'ANTHROPIC_API_KEY does not have permission to use this model.';
-      }
+      if (geminiResult.status === 429) userHint = `Gemini rate limit hit after ${geminiResult.attempts} attempts. Try again in a minute.`;
+      else if (geminiResult.status === 401 || geminiResult.status === 403) userHint = 'GEMINI_API_KEY is invalid. Please update your key in Supabase secrets.';
 
       return new Response(
         JSON.stringify({
-          error: `Claude API returned ${anthropicResult.status}`,
-          claude_status: anthropicResult.status,
+          error: `Gemini API returned ${geminiResult.status}`,
           details: errBody.substring(0, 500),
-          attempts: anthropicResult.attempts,
+          attempts: geminiResult.attempts,
           hint: userHint || undefined,
         }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ── Step 7: Parse Anthropic response ──
-    console.log('[gemini-review-scan] step 7: parsing Anthropic response');
-    const anthropicData = anthropicResult.body;
+    // ── Step 7: Parse Gemini response ──
+    console.log('[gemini-review-scan] step 7: parsing Gemini response');
+    const anthropicData = geminiResult.body;
     const stopReason = anthropicData.stop_reason;
     const textBlock = anthropicData.content?.find((b: any) => b.type === 'text');
     const resultText = textBlock?.text ?? '';

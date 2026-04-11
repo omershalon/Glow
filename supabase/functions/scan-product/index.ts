@@ -44,10 +44,10 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'ANTHROPIC_API_KEY secret not set' }),
+        JSON.stringify({ error: 'GEMINI_API_KEY not set' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -95,20 +95,7 @@ serve(async (req) => {
 ${onboarding?.known_allergies?.length ? `- Known Allergies: ${onboarding.known_allergies.join(', ')}` : ''}`
       : 'No skin profile available — provide general analysis.';
 
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1000,
-        messages: [
-          {
-            role: 'user',
-            content: `You are a holistic skin health analyst who evaluates products through a clean beauty and natural health lens, combined with evidence-based dermatology.
+    const promptText = `You are a holistic skin health analyst who evaluates products through a clean beauty and natural health lens, combined with evidence-based dermatology.
 
 ${skinContext}
 
@@ -117,41 +104,36 @@ Name: ${product.name}
 Ingredients: ${product.ingredients.join(', ')}
 
 ANALYSIS PHILOSOPHY:
-FLAG as concerns: synthetic fragrances/parfum, all parabens (methyl/propyl/butyl), formaldehyde releasers (DMDM hydantoin, imidazolidinyl urea, quaternium-15), SLS/SLES, petroleum derivatives (mineral oil, petrolatum, paraffin), synthetic silicones (dimethicone, cyclomethicone), PEGs, chemical sunscreen filters (oxybenzone, octinoxate), artificial colors (FD&C), propylene glycol, BHT/BHA preservatives, triclosan, ethanolamines (DEA/MEA/TEA).
+FLAG as concerns: synthetic fragrances/parfum, all parabens, formaldehyde releasers, SLS/SLES, petroleum derivatives, synthetic silicones, PEGs, chemical sunscreen filters, artificial colors, propylene glycol, BHT/BHA preservatives, triclosan, ethanolamines.
 
-HIGHLIGHT as beneficial: plant oils (jojoba, rosehip, argan, hemp seed, sea buckthorn, tamanu, squalane), botanical extracts (tea tree, centella, green tea, chamomile, calendula, aloe, witch hazel, willow bark), evidence-based actives (niacinamide, zinc, vitamin C, hyaluronic acid, bakuchiol), traditional ingredients (tallow, shea butter, beeswax, manuka honey, colloidal oatmeal), fermented/probiotic ingredients, ceramides, allantoin, panthenol.
+HIGHLIGHT as beneficial: plant oils, botanical extracts, evidence-based actives (niacinamide, zinc, vitamin C, hyaluronic acid, bakuchiol), traditional ingredients (tallow, shea butter, beeswax, manuka honey), fermented/probiotic ingredients, ceramides, allantoin, panthenol.
 
 Return ONLY valid JSON, no markdown:
-{
-  "product_name": "${product.name}",
-  "verdict": "suitable",
-  "reason": "2-3 sentence explanation from a natural/holistic perspective, tailored to their skin profile. Mention specific good or bad ingredients.",
-  "flagged_ingredients": [],
-  "beneficial_ingredients": []
-}
+{"product_name":"${product.name}","verdict":"suitable","reason":"2-3 sentence explanation.","flagged_ingredients":[],"beneficial_ingredients":[]}
 
-Verdict options:
-- "suitable": clean formulation with mostly natural/beneficial ingredients for their skin type
-- "caution": mixed — has some beneficial ingredients but also contains synthetic/concerning ones
-- "unsuitable": heavily synthetic formulation or contains multiple concerning ingredients
+Verdict: "suitable" | "caution" | "unsuitable"
+Return ONLY valid JSON.`;
 
-Return ONLY valid JSON, no markdown.`,
-          },
-        ],
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1000 },
       }),
     });
 
-    if (!anthropicRes.ok) {
-      const errText = await anthropicRes.text();
-      console.error('Anthropic API error:', errText);
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error('Gemini API error:', errText);
       return new Response(
-        JSON.stringify({ error: 'Anthropic API error', details: errText }),
+        JSON.stringify({ error: 'Gemini API error', details: errText }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const claudeData = await anthropicRes.json();
-    const analysisText = claudeData.content?.find((b: { type: string }) => b.type === 'text')?.text ?? '';
+    const geminiData = await geminiRes.json();
+    const analysisText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
     let analysis: {
       product_name: string;
