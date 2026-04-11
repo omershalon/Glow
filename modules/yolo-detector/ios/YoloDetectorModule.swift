@@ -43,19 +43,17 @@ public class YoloDetectorModule: Module {
       return
     }
 
-    guard let cgImage = image.cgImage else {
-      promise.reject("ERR_IMAGE", "Could not get CGImage")
-      return
-    }
-
-    let imageWidth = cgImage.width
-    let imageHeight = cgImage.height
+    // Use UIImage.size (which respects EXIF orientation) for correct display coordinates.
+    // cgImage.width/height ignore orientation and would produce misaligned bboxes.
+    let imageWidth = Int(image.size.width * image.scale)
+    let imageHeight = Int(image.size.height * image.scale)
 
     do {
       let model = try getModel()
 
-      // Preprocess: resize to 1280x1280 and create CVPixelBuffer
-      guard let pixelBuffer = preprocessImage(cgImage: cgImage) else {
+      // Preprocess: resize to 1280x1280 and create CVPixelBuffer.
+      // Draw via UIImage so the orientation is applied before inference.
+      guard let pixelBuffer = preprocessImage(image: image) else {
         promise.reject("ERR_PREPROCESS", "Failed to preprocess image")
         return
       }
@@ -73,7 +71,7 @@ public class YoloDetectorModule: Module {
 
       promise.resolve([
         "detections": detections,
-        "imageWidth": imageWidth,
+        "imageWidth":  imageWidth,
         "imageHeight": imageHeight,
         "inferenceTimeMs": inferenceTime
       ])
@@ -83,7 +81,7 @@ public class YoloDetectorModule: Module {
     }
   }
 
-  private func preprocessImage(cgImage: CGImage) -> CVPixelBuffer? {
+  private func preprocessImage(image: UIImage) -> CVPixelBuffer? {
     let size = modelInputSize
     var pixelBuffer: CVPixelBuffer?
     let attrs: [String: Any] = [
@@ -107,7 +105,11 @@ public class YoloDetectorModule: Module {
     ) else { return nil }
 
     context.interpolationQuality = .high
-    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+    // Draw via UIGraphics so UIImage's EXIF orientation is applied.
+    // Drawing cgImage directly ignores orientation, causing misaligned bboxes.
+    UIGraphicsPushContext(context)
+    image.draw(in: CGRect(x: 0, y: 0, width: size, height: size))
+    UIGraphicsPopContext()
     return buffer
   }
 

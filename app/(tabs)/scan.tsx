@@ -12,6 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,6 +50,16 @@ function CheckIcon({ size = 20, color = '#34D399' }: { size?: number; color?: st
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path d="M20 6L9 17l-5-5" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function UploadIcon({ size = 28, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M17 8l-5-5-5 5" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 3v12" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -126,6 +137,44 @@ export default function ScanScreen() {
       console.error('Capture error:', err);
       Alert.alert('Capture failed', 'Could not take photo. Please try again.');
     }
+  };
+
+  const pickPhoto = async () => {
+    if (processing) return;
+
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to your photo library in Settings.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: true,
+      allowsEditing: false,
+    });
+
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      Alert.alert('Upload failed', 'Could not read image data. Please try again.');
+      return;
+    }
+
+    const captured: CapturedImage = {
+      uri: asset.uri,
+      base64: asset.base64,
+      width: asset.width,
+      height: asset.height,
+    };
+
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newCaptures = [...captures];
+    newCaptures[currentStep] = captured;
+    setCaptures(newCaptures);
+    setPreviewing(true);
   };
 
   const retakePhoto = () => {
@@ -222,6 +271,11 @@ export default function ScanScreen() {
         </Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission} activeOpacity={0.85}>
           <Text style={styles.permissionButtonText}>Enable Camera</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={pickPhoto} activeOpacity={0.75}>
+          <Text style={{ ...Typography.bodyMedium, color: Colors.primary }}>
+            Or upload photos from library
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -352,11 +406,21 @@ export default function ScanScreen() {
           ))}
         </View>
 
-        <Pressable onPress={capturePhoto} onPressIn={onShutterPressIn} onPressOut={onShutterPressOut}>
-          <Animated.View style={[styles.shutterOuter, { transform: [{ scale: shutterScale }] }]}>
-            <Animated.View style={[styles.shutterInner, { backgroundColor: shutterBg }]} />
-          </Animated.View>
-        </Pressable>
+        <View style={styles.shutterRow}>
+          {/* Spacer to balance the upload button */}
+          <View style={styles.shutterSideSlot} />
+
+          <Pressable onPress={capturePhoto} onPressIn={onShutterPressIn} onPressOut={onShutterPressOut}>
+            <Animated.View style={[styles.shutterOuter, { transform: [{ scale: shutterScale }] }]}>
+              <Animated.View style={[styles.shutterInner, { backgroundColor: shutterBg }]} />
+            </Animated.View>
+          </Pressable>
+
+          <TouchableOpacity style={styles.uploadButton} onPress={pickPhoto} activeOpacity={0.75}>
+            <UploadIcon size={24} color="#FFFFFF" />
+            <Text style={styles.uploadButtonText}>Upload</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -499,6 +563,29 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
+  },
+
+  // Shutter row (shutter + upload side by side)
+  shutterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xxl,
+    width: '100%',
+    paddingHorizontal: Spacing.xxl,
+  },
+  shutterSideSlot: {
+    width: 64,
+    alignItems: 'center',
+  },
+  uploadButton: {
+    width: 64,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  uploadButtonText: {
+    ...Typography.labelSmall,
+    color: 'rgba(255,255,255,0.7)',
   },
 
   // Preview

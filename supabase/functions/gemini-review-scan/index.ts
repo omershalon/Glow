@@ -655,7 +655,7 @@ CRITICAL constraints:
 
     // ── Step 6: Call Gemini API (with retry) ──
     console.log('[gemini-review-scan] step 6: calling Gemini API (with retry support)');
-    const geminiResult = await callGeminiWithRetry(anthropicKey, geminiContents, { temperature: 0.3, maxOutputTokens: 8192 });
+    const geminiResult = await callGeminiWithRetry(anthropicKey, geminiContents, { temperature: 0.3, maxOutputTokens: 32768 });
 
     console.log(`[gemini-review-scan] Gemini call completed — status: ${geminiResult.status}, attempts: ${geminiResult.attempts}`);
 
