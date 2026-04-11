@@ -6,11 +6,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CONFIG = {
-  /** Only call Gemini on the first scan of the day; reuse cached response for later scans */
+  /** Only call Claude on the first scan of the day; reuse cached response for later scans */
   enable_first_scan_only_gemini: true,
 
-  /** Send only the front image to Gemini (left/right are excluded) */
-  enable_gemini_front_only: true,
+  /** Send only the front image to Claude (left/right are excluded) */
+  enable_gemini_front_only: false,
 
   /** If true, send only detection crops instead of the full front image (not yet implemented — placeholder) */
   enable_gemini_crop_only: false,
@@ -18,7 +18,7 @@ const CONFIG = {
   /** Max dimension (px) the client should have resized the front image to before sending */
   image_resize_for_gemini: 800,
 
-  /** Thresholds that determine whether a later-day scan is different enough to re-call Gemini */
+  /** Thresholds that determine whether a later-day scan is different enough to re-call Claude */
   meaningful_change_threshold: {
     /** Fractional change in total spot count that triggers a re-run (0.30 = 30%) */
     count_change_pct: 0.30,
@@ -41,17 +41,13 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash-lite';
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const ANTHROPIC_MODEL = 'claude-opus-4-6';
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_VERSION = '2023-06-01';
 
-function geminiUrl(model: string): string {
-  return `${GEMINI_API_BASE}/${model}:generateContent`;
-}
-
-/** Maximum retries for transient 429 (rate-limit) errors — NOT for quota exhaustion */
+/** Maximum retries for transient 429/529 errors */
 const MAX_RETRIES = 2;
-/** Base delay in ms for exponential backoff on retryable 429s */
+/** Base delay in ms for exponential backoff on retryable errors */
 const RETRY_BASE_DELAY_MS = 2000;
 
 // ── Types ──
@@ -240,100 +236,72 @@ function buildCachedResponse(prev: PreviousSession, current: AllDetections): obj
 
 // ── Retry helper ──
 
-interface GeminiCallResult {
+interface AnthropicCallResult {
   ok: boolean;
   status: number;
-  body: any;            // parsed JSON or raw text
-  retryable: boolean;   // true if 429 is transient (RPM), false if quota exhausted
+  body: any;
+  retryable: boolean;
   retryAfterMs?: number;
   attempts: number;
-  modelUsed: string;    // which model ultimately succeeded or last tried
 }
 
 /**
- * Call Gemini with smart retry for transient 429s.
- * If the primary model's quota is exhausted, automatically falls back to GEMINI_FALLBACK_MODEL.
- * Quota-exhaustion 429s skip retry (they won't clear up with a short wait).
+ * Call the Anthropic Messages API with retry for transient 429s and 529s.
  */
-async function callGeminiWithRetry(
+async function callAnthropicWithRetry(
   apiKey: string,
   requestBody: object
-): Promise<GeminiCallResult> {
-  const modelsToTry = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL];
-  let lastResult: GeminiCallResult | null = null;
+): Promise<AnthropicCallResult> {
+  let lastResult: AnthropicCallResult | null = null;
 
-  for (const model of modelsToTry) {
-    const url = `${geminiUrl(model)}?key=${apiKey}`;
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+    console.log(`[gemini-review-scan] Anthropic API call — model: ${ANTHROPIC_MODEL}, attempt ${attempt}/${MAX_RETRIES + 1}`);
 
-    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
-      console.log(`[gemini-review-scan] Gemini API call — model: ${model}, attempt ${attempt}/${MAX_RETRIES + 1}`);
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+      },
+      body: JSON.stringify(requestBody),
+    });
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
+    console.log(`[gemini-review-scan] Anthropic response status: ${res.status}`);
 
-      console.log(`[gemini-review-scan] Gemini response status: ${res.status} (model: ${model})`);
+    if (res.ok) {
+      const data = await res.json();
+      return { ok: true, status: res.status, body: data, retryable: false, attempts: attempt };
+    }
 
-      if (res.ok) {
-        const data = await res.json();
-        return { ok: true, status: res.status, body: data, retryable: false, attempts: attempt, modelUsed: model };
-      }
-
-      // Non-429 errors — don't retry
-      if (res.status !== 429) {
-        const errText = await res.text();
-        return { ok: false, status: res.status, body: errText, retryable: false, attempts: attempt, modelUsed: model };
-      }
-
-      // ── 429 handling ──
+    // Non-retryable errors — don't retry
+    if (res.status !== 429 && res.status !== 529) {
       const errText = await res.text();
-      const retryAfterHeader = res.headers.get('Retry-After');
-      const retryAfterMs = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : undefined;
-
-      console.log(`[gemini-review-scan] 429 received on attempt ${attempt} (model: ${model})`);
-      console.log(`[gemini-review-scan]   Retry-After header: ${retryAfterHeader ?? 'not set'}`);
-      console.log(`[gemini-review-scan]   error body (first 500 chars): ${errText.substring(0, 500)}`);
-
-      // Check if this is a QUOTA exhaustion (not retryable) vs a transient rate limit
-      const isQuotaExhausted =
-        errText.includes('exceeded your current quota') ||
-        errText.includes('billing') ||
-        errText.includes('QUOTA_EXCEEDED') ||
-        errText.includes('quota');
-
-      lastResult = {
-        ok: false,
-        status: 429,
-        body: errText,
-        retryable: !isQuotaExhausted,
-        retryAfterMs,
-        attempts: attempt,
-        modelUsed: model,
-      };
-
-      if (isQuotaExhausted) {
-        console.log(`[gemini-review-scan] 429 is QUOTA EXHAUSTION for ${model} — trying fallback model if available`);
-        break; // break inner retry loop → try next model
-      }
-
-      // Transient rate limit — wait and retry
-      if (attempt <= MAX_RETRIES) {
-        const delay = retryAfterMs ?? RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-        console.log(`[gemini-review-scan] transient 429 — retrying in ${delay}ms`);
-        await new Promise((r) => setTimeout(r, delay));
-      }
+      return { ok: false, status: res.status, body: errText, retryable: false, attempts: attempt };
     }
 
-    // If last result was OK (shouldn't reach here but safety check) or non-quota error, stop trying models
-    if (lastResult && (lastResult.ok || (lastResult.status !== 429 || lastResult.retryable))) {
-      break;
-    }
+    // 429 / 529 — retryable
+    const errText = await res.text();
+    const retryAfterHeader = res.headers.get('retry-after');
+    const retryAfterMs = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : undefined;
 
-    // If quota exhausted on primary, try fallback
-    if (model === GEMINI_MODEL && lastResult && !lastResult.retryable) {
-      console.log(`[gemini-review-scan] ═══ Falling back from ${GEMINI_MODEL} → ${GEMINI_FALLBACK_MODEL} ═══`);
+    console.log(`[gemini-review-scan] ${res.status} received on attempt ${attempt}`);
+    console.log(`[gemini-review-scan]   Retry-After: ${retryAfterHeader ?? 'not set'}`);
+    console.log(`[gemini-review-scan]   error body (first 300 chars): ${errText.substring(0, 300)}`);
+
+    lastResult = {
+      ok: false,
+      status: res.status,
+      body: errText,
+      retryable: true,
+      retryAfterMs,
+      attempts: attempt,
+    };
+
+    if (attempt <= MAX_RETRIES) {
+      const delay = retryAfterMs ?? RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`[gemini-review-scan] retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
 
@@ -353,64 +321,57 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  // ── GET /test — lightweight Gemini health check (tests both primary + fallback) ──
+  // ── GET /test — lightweight Claude API health check ──
   if (req.method === 'GET') {
-    console.log('[gemini-review-scan] GET /test — running Gemini health check');
-    const geminiKey = Deno.env.get('GEMINI_API_KEY');
-    if (!geminiKey) {
+    console.log('[gemini-review-scan] GET /test — running Claude API health check');
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!anthropicKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: 'GEMINI_API_KEY not set' }),
+        JSON.stringify({ ok: false, error: 'ANTHROPIC_API_KEY not set' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const testBody = {
-      contents: [{ parts: [{ text: 'Reply with exactly: {"status":"ok"}' }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 32 },
-    };
+    try {
+      const testRes = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_MODEL,
+          max_tokens: 32,
+          messages: [{ role: 'user', content: 'Reply with exactly: {"status":"ok"}' }],
+        }),
+      });
+      const testStatus = testRes.status;
+      const testText = await testRes.text();
+      console.log(`[gemini-review-scan] test ${ANTHROPIC_MODEL}: status ${testStatus}`);
 
-    const results: Record<string, any> = {};
-
-    for (const model of [GEMINI_MODEL, GEMINI_FALLBACK_MODEL]) {
-      try {
-        const testRes = await fetch(`${geminiUrl(model)}?key=${geminiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(testBody),
-        });
-        const testStatus = testRes.status;
-        const testText = await testRes.text();
-        console.log(`[gemini-review-scan] test ${model}: status ${testStatus}`);
-        console.log(`[gemini-review-scan] test ${model}: body ${testText.substring(0, 200)}`);
-
-        results[model] = {
-          status: testStatus,
+      return new Response(
+        JSON.stringify({
           ok: testRes.ok,
+          model: ANTHROPIC_MODEL,
+          key_prefix: anthropicKey.substring(0, 8) + '...',
+          key_length: anthropicKey.length,
+          status: testStatus,
           ...(testRes.ok
-            ? { message: 'reachable and responding' }
+            ? { message: 'Claude API is reachable and responding' }
             : { error: testText.substring(0, 300) }),
-        };
-      } catch (e) {
-        results[model] = { status: 0, ok: false, error: String(e) };
-      }
+          hint: testRes.ok
+            ? 'Claude API is available. Scan should work.'
+            : 'Claude API returned an error. Check your ANTHROPIC_API_KEY in Supabase secrets.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ ok: false, error: String(e) }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-
-    const anyOk = Object.values(results).some((r: any) => r.ok);
-
-    return new Response(
-      JSON.stringify({
-        ok: anyOk,
-        key_prefix: geminiKey.substring(0, 8) + '...',
-        key_length: geminiKey.length,
-        primary_model: GEMINI_MODEL,
-        fallback_model: GEMINI_FALLBACK_MODEL,
-        models: results,
-        hint: anyOk
-          ? 'At least one Gemini model is available. Scan should work.'
-          : 'Both models returned errors. Your Gemini quota may be exhausted. Check https://ai.google.dev/gemini-api/docs/rate-limits',
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   }
 
   // ── POST — full scan review ──
@@ -447,12 +408,12 @@ serve(async (req) => {
     }
     console.log('[gemini-review-scan] authenticated user:', user.id);
 
-    // ── Step 2: GEMINI_API_KEY ──
-    const geminiKey = Deno.env.get('GEMINI_API_KEY');
-    console.log('[gemini-review-scan] step 2: GEMINI_API_KEY present:', !!geminiKey, 'length:', geminiKey?.length ?? 0);
-    if (!geminiKey) {
+    // ── Step 2: ANTHROPIC_API_KEY ──
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    console.log('[gemini-review-scan] step 2: ANTHROPIC_API_KEY present:', !!anthropicKey, 'length:', anthropicKey?.length ?? 0);
+    if (!anthropicKey) {
       return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY not set in Supabase secrets' }),
+        JSON.stringify({ error: 'ANTHROPIC_API_KEY not set in Supabase secrets' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -469,7 +430,7 @@ serve(async (req) => {
       );
     }
 
-    const { front_image, detections, image_dimensions } = body;
+    const { front_image, left_image, right_image, detections, image_dimensions } = body;
     const current: AllDetections = {
       front: detections?.front ?? [],
       left: detections?.left ?? [],
@@ -477,7 +438,7 @@ serve(async (req) => {
     };
     const currentTotal = current.front.length + current.left.length + current.right.length;
 
-    console.log('[gemini-review-scan] received front_image length:', front_image?.length ?? 0);
+    console.log('[gemini-review-scan] received images — front:', front_image?.length ?? 0, 'left:', left_image?.length ?? 0, 'right:', right_image?.length ?? 0);
     console.log('[gemini-review-scan] Ultralytics detections:', {
       front: current.front.length,
       left: current.left.length,
@@ -496,7 +457,6 @@ serve(async (req) => {
     if (CONFIG.enable_first_scan_only_gemini) {
       console.log('[gemini-review-scan] step 4: checking for first scan of day');
 
-      // Query for today's earliest completed session for this user
       const todayUTC = new Date();
       todayUTC.setUTCHours(0, 0, 0, 0);
 
@@ -515,7 +475,7 @@ serve(async (req) => {
         .limit(1);
 
       if (queryError) {
-        console.warn('[gemini-review-scan] DB query error (continuing with Gemini):', queryError.message);
+        console.warn('[gemini-review-scan] DB query error (continuing with Claude):', queryError.message);
       } else if (prevSessions && prevSessions.length > 0) {
         const prev = prevSessions[0] as PreviousSession;
         console.log('[gemini-review-scan] found earlier session today:', prev.id, '— running meaningful-change check');
@@ -524,7 +484,7 @@ serve(async (req) => {
 
         if (!changed) {
           const skipReason = 'No meaningful change from first scan of day';
-          console.log('[gemini-review-scan] ✓ GEMINI SKIPPED —', skipReason);
+          console.log('[gemini-review-scan] ✓ AI SKIPPED —', skipReason);
           console.log('[gemini-review-scan]   cached session:', prev.id);
           console.log('[gemini-review-scan]   prev total_spots:', prev.total_spots, '→ current:', currentTotal);
 
@@ -535,19 +495,18 @@ serve(async (req) => {
           );
         }
 
-        console.log('[gemini-review-scan] ✗ MEANINGFUL CHANGE — re-calling Gemini');
+        console.log('[gemini-review-scan] ✗ MEANINGFUL CHANGE — re-calling Claude');
         console.log('[gemini-review-scan]   reasons:', reasons.join(' | '));
       } else {
-        console.log('[gemini-review-scan] no completed sessions today — FIRST SCAN OF DAY → calling Gemini');
+        console.log('[gemini-review-scan] no completed sessions today — FIRST SCAN OF DAY → calling Claude');
       }
     } else {
-      console.log('[gemini-review-scan] step 4: first-scan-only disabled, always calling Gemini');
+      console.log('[gemini-review-scan] step 4: first-scan-only disabled, always calling Claude');
     }
 
-    // ── Step 5: Build Gemini request ──
-    console.log('[gemini-review-scan] step 5: building Gemini request');
+    // ── Step 5: Build Anthropic request ──
+    console.log('[gemini-review-scan] step 5: building Anthropic request');
 
-    // Ultralytics summary as text context (all 3 angles)
     const ultralyticsContext = [
       `## Ultralytics YOLO Detections (all 3 angles)\n`,
       `Total spots found: ${currentTotal}`,
@@ -570,55 +529,56 @@ serve(async (req) => {
     ].join('\n');
 
     const frontDim = image_dimensions?.front;
+    const leftDim = image_dimensions?.left;
+    const rightDim = image_dimensions?.right;
+
     const frontLabel = frontDim
-      ? `FRONT VIEW (${frontDim.width}x${frontDim.height}px original, sent resized to ≤${CONFIG.image_resize_for_gemini}px)`
-      : 'FRONT VIEW';
+      ? `IMAGE 1 — FRONT VIEW (${frontDim.width}x${frontDim.height}px original, sent resized to ≤${CONFIG.image_resize_for_gemini}px)`
+      : 'IMAGE 1 — FRONT VIEW';
+    const leftLabel = leftDim
+      ? `IMAGE 2 — LEFT SIDE VIEW (${leftDim.width}x${leftDim.height}px original, sent resized to ≤${CONFIG.image_resize_for_gemini}px)`
+      : 'IMAGE 2 — LEFT SIDE VIEW';
+    const rightLabel = rightDim
+      ? `IMAGE 3 — RIGHT SIDE VIEW (${rightDim.width}x${rightDim.height}px original, sent resized to ≤${CONFIG.image_resize_for_gemini}px)`
+      : 'IMAGE 3 — RIGHT SIDE VIEW';
 
-    // Build Gemini parts — front image only
-    const parts: any[] = [
-      {
-        inlineData: {
-          mimeType: detectMediaType(front_image),
-          data: front_image,
-        },
-      },
-      { text: `[${frontLabel}]` },
-      { text: ultralyticsContext },
-    ];
+    const frontMediaType = detectMediaType(front_image) as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+    const leftMediaType = left_image ? detectMediaType(left_image) as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' : frontMediaType;
+    const rightMediaType = right_image ? detectMediaType(right_image) as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' : frontMediaType;
 
-    const geminiPayloadSizeKB = Math.round(
-      JSON.stringify(parts).length / 1024
-    );
+    const hasLeftImage = !!left_image;
+    const hasRightImage = !!right_image;
 
-    console.log('[gemini-review-scan] Gemini payload info:');
-    console.log('  model:', GEMINI_MODEL);
-    console.log('  images sent:', 1, '(front only)');
-    console.log('  front_image base64 length:', front_image.length);
-    console.log('  detections in context — front:', current.front.length, 'left:', current.left.length, 'right:', current.right.length);
-    console.log('  total payload size:', geminiPayloadSizeKB, 'KB');
-
-    const prompt = `You are an expert dermatologist AI working alongside an Ultralytics YOLO acne detection model.
+    const systemPrompt = `You are an expert dermatologist AI working alongside an Ultralytics YOLO acne detection model.
 
 Your role is strictly complementary to the YOLO model:
 - YOLO is the PRIMARY detector. Its results are the ground truth unless you are FULLY certain of an error.
-- You must use the YOLO detections above as structured context for your analysis.
+- You must use the YOLO detections provided as structured context for your analysis.
 - You may suggest possible spots the model missed (mark as source="ai", status="added").
 - You may only override a YOLO result (correct or remove) when you are 100% certain — otherwise keep it as-is.
 
 ## Class mapping (YOLO model)
 0 = blackheads | 1 = dark spot | 2 = nodules | 3 = papules | 4 = pustules | 5 = whiteheads
 
+Return ONLY valid JSON. No markdown fences. No explanation outside the JSON object.`;
+
+    const imageCount = 1 + (hasLeftImage ? 1 : 0) + (hasRightImage ? 1 : 0);
+    const userPrompt = `You are provided with ${imageCount} face image${imageCount > 1 ? 's' : ''} of the same person:
+- ${frontLabel}${hasLeftImage ? `\n- ${leftLabel}` : ''}${hasRightImage ? `\n- ${rightLabel}` : ''}
+
+${ultralyticsContext}
+
 ## Your two tasks
 
-### Task 1 — Review YOLO detections (front image only shown)
-Using the front image and the YOLO detection list for all 3 angles:
-- Confirm front-image detections you can visually verify
-- Note any possible missed spots on the front image
-- For left/right angles, rely on the YOLO detection list (no images provided) — preserve those results unchanged unless confidence is very low
+### Task 1 — Review YOLO detections across all angles
+Using all ${imageCount} images and the YOLO detection list:
+- Confirm detections on each angle's image that you can visually verify
+- Note any possible missed spots on any image
+- Cross-reference all angles for a complete picture of the person's skin
 
 ### Task 2 — Skin analysis + plan
-Generate a comprehensive dermatologist-level analysis based on the YOLO results AND your visual assessment of the front image:
-- Overall severity and zone breakdown
+Generate a comprehensive dermatologist-level analysis based on the YOLO results AND your visual assessment of all ${imageCount} images:
+- Overall severity and zone breakdown (using all angles)
 - Skin type and moisture
 - Personalised skincare routine (morning/evening)
 - Weekly treatment recommendations
@@ -689,78 +649,100 @@ Return ONLY valid JSON with exactly this structure:
   }
 }
 
-Rules for reviewed_detections:
-- YOLO front detections you can visually confirm: source="model", status="confirmed"
-- Spots you ADD (model missed): source="ai", status="added", aiConfidence="high"|"medium"
-- YOLO result you CORRECT (only if 100% certain): source="model", status="corrected", include originalClass
-- YOLO false positive (only if 100% certain): source="model", status="removed"
-- Left/right detections: copy YOLO result as-is with source="model", status="confirmed" (no image to review)
-- Empty arrays are valid if no detections
+CRITICAL constraints:
+- summary.severity MUST be exactly one of: "mild", "moderate", or "severe" — no other values
+- Rules for reviewed_detections:
+  - YOLO detections you can visually confirm on the image: source="model", status="confirmed"
+  - Spots you ADD (model missed): source="ai", status="added", aiConfidence="high"|"medium"
+  - YOLO result you CORRECT (only if 100% certain): source="model", status="corrected", include originalClass
+  - YOLO false positive (only if 100% certain): source="model", status="removed"
+  - Empty arrays are valid if no detections`;
 
-Return ONLY the JSON. No markdown. No explanation.`;
+    // Build the content array — images first (labeled), then text prompt
+    type ContentBlock =
+      | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+      | { type: 'text'; text: string };
 
-    const geminiBody = {
-      contents: [{ parts: [...parts, { text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
-      },
+    const userContent: ContentBlock[] = [
+      { type: 'image', source: { type: 'base64', media_type: frontMediaType, data: front_image } },
+    ];
+    if (hasLeftImage) {
+      userContent.push({ type: 'image', source: { type: 'base64', media_type: leftMediaType, data: left_image } });
+    }
+    if (hasRightImage) {
+      userContent.push({ type: 'image', source: { type: 'base64', media_type: rightMediaType, data: right_image } });
+    }
+    userContent.push({ type: 'text', text: userPrompt });
+
+    const anthropicBody = {
+      model: ANTHROPIC_MODEL,
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userContent,
+        },
+      ],
     };
 
-    // ── Step 6: Call Gemini (with retry for transient 429s + model fallback) ──
-    console.log('[gemini-review-scan] step 6: calling Gemini API (with retry + fallback support)');
-    console.log(`[gemini-review-scan]   primary model: ${GEMINI_MODEL}, fallback: ${GEMINI_FALLBACK_MODEL}`);
-    const geminiResult = await callGeminiWithRetry(geminiKey, geminiBody);
+    const payloadSizeKB = Math.round(JSON.stringify(anthropicBody).length / 1024);
+    console.log('[gemini-review-scan] Anthropic payload info:');
+    console.log('  model:', ANTHROPIC_MODEL);
+    console.log('  images sent:', imageCount, '(front:', front_image.length, 'left:', left_image?.length ?? 0, 'right:', right_image?.length ?? 0, ')');
+    console.log('  media_types — front:', frontMediaType, 'left:', leftMediaType, 'right:', rightMediaType);
+    console.log('  detections — front:', current.front.length, 'left:', current.left.length, 'right:', current.right.length);
+    console.log('  total payload size:', payloadSizeKB, 'KB');
 
-    console.log(`[gemini-review-scan] Gemini call completed — status: ${geminiResult.status}, model: ${geminiResult.modelUsed}, attempts: ${geminiResult.attempts}`);
+    // ── Step 6: Call Anthropic API (with retry) ──
+    console.log('[gemini-review-scan] step 6: calling Anthropic API (with retry support)');
+    const anthropicResult = await callAnthropicWithRetry(anthropicKey, anthropicBody);
 
-    if (!geminiResult.ok) {
-      const errBody = typeof geminiResult.body === 'string' ? geminiResult.body : JSON.stringify(geminiResult.body);
-      console.error('[gemini-review-scan] Gemini API error status:', geminiResult.status);
-      console.error('[gemini-review-scan] Gemini API error body:', errBody.substring(0, 1000));
+    console.log(`[gemini-review-scan] Anthropic call completed — status: ${anthropicResult.status}, attempts: ${anthropicResult.attempts}`);
 
-      // Build a user-friendly error message for 429s
+    if (!anthropicResult.ok) {
+      const errBody = typeof anthropicResult.body === 'string' ? anthropicResult.body : JSON.stringify(anthropicResult.body);
+      console.error('[gemini-review-scan] Anthropic API error status:', anthropicResult.status);
+      console.error('[gemini-review-scan] Anthropic API error body:', errBody.substring(0, 1000));
+
       let userHint = '';
-      if (geminiResult.status === 429) {
-        if (!geminiResult.retryable) {
-          userHint = 'Your Gemini API quota is exhausted for the current billing period. '
-            + 'Please check your plan at https://ai.google.dev/gemini-api/docs/rate-limits '
-            + 'or wait for the quota to reset (usually daily). '
-            + 'You can also upgrade to a paid tier in Google AI Studio.';
-        } else {
-          userHint = `Gemini rate limit hit after ${geminiResult.attempts} attempts. Try again in a minute.`;
-        }
+      if (anthropicResult.status === 429) {
+        userHint = `Claude API rate limit hit after ${anthropicResult.attempts} attempts. Try again in a minute.`;
+      } else if (anthropicResult.status === 529) {
+        userHint = 'Claude API is temporarily overloaded. Please try again shortly.';
+      } else if (anthropicResult.status === 401) {
+        userHint = 'ANTHROPIC_API_KEY is invalid or revoked. Please update your key in Supabase secrets.';
+      } else if (anthropicResult.status === 403) {
+        userHint = 'ANTHROPIC_API_KEY does not have permission to use this model.';
       }
 
       return new Response(
         JSON.stringify({
-          error: `Gemini API returned ${geminiResult.status}`,
-          gemini_status: geminiResult.status,
+          error: `Claude API returned ${anthropicResult.status}`,
+          claude_status: anthropicResult.status,
           details: errBody.substring(0, 500),
-          attempts: geminiResult.attempts,
-          retryable: geminiResult.retryable,
+          attempts: anthropicResult.attempts,
           hint: userHint || undefined,
         }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ── Step 7: Parse Gemini response ──
-    console.log('[gemini-review-scan] step 7: parsing Gemini response');
-    const geminiData = geminiResult.body;
-    const candidate = geminiData.candidates?.[0];
-    const finishReason = candidate?.finishReason;
-    const resultText = candidate?.content?.parts?.[0]?.text ?? '';
+    // ── Step 7: Parse Anthropic response ──
+    console.log('[gemini-review-scan] step 7: parsing Anthropic response');
+    const anthropicData = anthropicResult.body;
+    const stopReason = anthropicData.stop_reason;
+    const textBlock = anthropicData.content?.find((b: any) => b.type === 'text');
+    const resultText = textBlock?.text ?? '';
 
-    console.log('[gemini-review-scan] finishReason:', finishReason);
+    console.log('[gemini-review-scan] stop_reason:', stopReason);
     console.log('[gemini-review-scan] response text length:', resultText.length);
 
     if (!resultText) {
-      console.error('[gemini-review-scan] Empty Gemini response');
-      console.error('[gemini-review-scan] promptFeedback:', JSON.stringify(geminiData.promptFeedback));
+      console.error('[gemini-review-scan] Empty Claude response');
+      console.error('[gemini-review-scan] full response:', JSON.stringify(anthropicData).substring(0, 500));
       return new Response(
-        JSON.stringify({ error: 'Gemini returned empty response', finishReason, promptFeedback: geminiData.promptFeedback }),
+        JSON.stringify({ error: 'Claude returned empty response', stop_reason: stopReason }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -773,12 +755,26 @@ Return ONLY the JSON. No markdown. No explanation.`;
       if (jsonMatch) {
         result = JSON.parse(jsonMatch[0]);
       } else {
-        console.error('[gemini-review-scan] Could not parse Gemini response as JSON:', resultText.substring(0, 300));
+        console.error('[gemini-review-scan] Could not parse Claude response as JSON:', resultText.substring(0, 300));
         return new Response(
-          JSON.stringify({ error: 'Could not parse Gemini response as JSON', snippet: resultText.substring(0, 200) }),
+          JSON.stringify({ error: 'Could not parse Claude response as JSON', snippet: resultText.substring(0, 200) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    // ── Normalize severity to valid enum values ──
+    const VALID_SEVERITIES = ['mild', 'moderate', 'severe'];
+    if (result.summary?.severity && !VALID_SEVERITIES.includes(result.summary.severity)) {
+      const raw = result.summary.severity.toLowerCase();
+      if (raw.includes('min') || raw.includes('none') || raw.includes('clear') || raw === 'low') {
+        result.summary.severity = 'mild';
+      } else if (raw.includes('sev') || raw.includes('high') || raw.includes('severe')) {
+        result.summary.severity = 'severe';
+      } else {
+        result.summary.severity = 'moderate';
+      }
+      console.log(`[gemini-review-scan] normalized severity "${raw}" → "${result.summary.severity}"`);
     }
 
     // ── Step 8: Validate required fields ──
@@ -793,7 +789,7 @@ Return ONLY the JSON. No markdown. No explanation.`;
     if (missing.length > 0) {
       console.error('[gemini-review-scan] response missing fields:', missing);
       return new Response(
-        JSON.stringify({ error: 'Gemini returned incomplete response', missing_fields: missing }),
+        JSON.stringify({ error: 'Claude returned incomplete response', missing_fields: missing }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

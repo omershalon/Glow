@@ -57,8 +57,10 @@ export type ImageSet = Record<ViewAngle, CapturedImage>;
 
 export interface ScanRequest {
   user_id: string;
-  /** Only the front image is sent to Gemini (resized). Left/right are excluded. */
-  front_image: string; // base64, resized to GEMINI_MAX_DIM
+  /** All 3 images resized to GEMINI_MAX_DIM on longest side */
+  front_image: string; // base64
+  left_image: string;  // base64
+  right_image: string; // base64
   detections: Record<ViewAngle, Detection[]>; // all 3 angles, full Ultralytics output
   image_dimensions: Record<ViewAngle, { width: number; height: number }>;
 }

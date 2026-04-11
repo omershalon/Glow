@@ -164,16 +164,19 @@ export default function ScanResultsScreen() {
           <Svg style={StyleSheet.absoluteFill} width={IMAGE_WIDTH} height={IMAGE_HEIGHT}>
             {detections.filter((d) => d.status !== 'removed').map((d, i) => {
               const color = COLORS[d.className] ?? '#FFFFFF';
-              // Scale bbox from original image coords to display coords
+              // Scale bbox from original image coords to display coords.
+              // The image is rendered with resizeMode="cover", so we use a single
+              // scale factor (max of both axes) and apply the crop offset.
               const dims = (session.model_detections as any)?.image_dimensions?.[activeView];
               const imgW = dims?.width ?? 1280;
               const imgH = dims?.height ?? 1280;
-              const scaleX = IMAGE_WIDTH / imgW;
-              const scaleY = IMAGE_HEIGHT / imgH;
-              const x = d.bbox[0] * scaleX;
-              const y = d.bbox[1] * scaleY;
-              const w = (d.bbox[2] - d.bbox[0]) * scaleX;
-              const h = (d.bbox[3] - d.bbox[1]) * scaleY;
+              const scale = Math.max(IMAGE_WIDTH / imgW, IMAGE_HEIGHT / imgH);
+              const offsetX = (IMAGE_WIDTH - imgW * scale) / 2;
+              const offsetY = (IMAGE_HEIGHT - imgH * scale) / 2;
+              const x = d.bbox[0] * scale + offsetX;
+              const y = d.bbox[1] * scale + offsetY;
+              const w = (d.bbox[2] - d.bbox[0]) * scale;
+              const h = (d.bbox[3] - d.bbox[1]) * scale;
 
               return (
                 <SvgRect

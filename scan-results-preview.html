@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glow – Scan Results Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #02020A;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 24px 80px;
+    }
+
+    .phone-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .preview-label {
+      color: rgba(255,255,255,0.28);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    /* ── PHONE FRAME ── */
+    .phone {
+      width: 390px;
+      height: 844px;
+      background: #08080F;
+      border-radius: 54px;
+      border: 1.5px solid rgba(255,255,255,0.1);
+      box-shadow:
+        0 0 0 9px #0B0B0B,
+        0 0 0 10px rgba(255,255,255,0.05),
+        0 50px 100px rgba(0,0,0,0.95),
+        0 0 80px rgba(124,92,252,0.1);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dynamic-island {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 126px;
+      height: 37px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 20;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 32px 0;
+      height: 58px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 5;
+    }
+
+    .time {
+      font-size: 15px;
+      font-weight: 700;
+      color: white;
+      margin-top: 4px;
+    }
+
+    .status-icons {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 4px;
+    }
+
+    .screen {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-bottom: 90px;
+      scroll-behavior: smooth;
+    }
+    .screen::-webkit-scrollbar { display: none; }
+    .screen { scrollbar-width: none; }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px 10px;
+    }
+
+    .icon-btn {
+      width: 36px; height: 36px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+
+    .header-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .header-date {
+      font-size: 11px;
+      color: rgba(255,255,255,0.35);
+      font-weight: 500;
+    }
+
+    /* ── PHOTO TABS ── */
+    .photo-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 0 20px 10px;
+    }
+
+    .photo-tab {
+      flex: 1;
+      height: 32px;
+      border-radius: 100px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.05);
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: all 0.2s;
+    }
+
+    .photo-tab.active {
+      background: linear-gradient(135deg, #7C5CFC, #5B21B6);
+      color: white;
+    }
+
+    /* ── PHOTO CARD ── */
+    .photo-card {
+      margin: 0 20px 14px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.07);
+      position: relative;
+      height: 230px;
+      background: linear-gradient(160deg, #140D2C 0%, #0A0618 100%);
+    }
+
+    .photo-legend {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .photo-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.85);
+    }
+
+    .leg-solid { width: 16px; height: 2px; border-radius: 1px; }
+    .leg-dashed { width: 16px; height: 0; border-top: 2px dashed; }
+
+    /* ── SEVERITY CARD ── */
+    .section-pad { padding: 0 20px; margin-bottom: 14px; }
+
+    .severity-card {
+      background: linear-gradient(135deg, #3B1FA3 0%, #1E0F5C 100%);
+      border-radius: 22px;
+      padding: 20px;
+      border: 1px solid rgba(124,92,252,0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .severity-card::before {
+      content: '';
+      position: absolute;
+      top: -40px; right: -40px;
+      width: 140px; height: 140px;
+      border-radius: 50%;
+      background: rgba(124,92,252,0.12);
+      pointer-events: none;
+    }
+
+    .severity-card::after {
+      content: '';
+      position: absolute;
+      bottom: -30px; left: -20px;
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      background: rgba(91,33,182,0.15);
+      pointer-events: none;
+    }
+
+    .sev-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      position: relative; z-index:1;
+    }
+
+    .sev-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+    }
+
+    .sev-sub {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    .sev-badge {
+      padding: 7px 14px;
+      border-radius: 100px;
+      background: rgba(252,211,77,0.15);
+      border: 1px solid rgba(252,211,77,0.3);
+      color: #FCD34D;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .sev-bar {
+      display: flex;
+      gap: 4px;
+      height: 6px;
+      position: relative; z-index: 1;
+    }
+
+    .sev-seg {
+      flex: 1; border-radius: 3px;
+      background: rgba(255,255,255,0.1);
+    }
+    .sev-seg.lit1 { background: #34D399; }
+    .sev-seg.lit2 { background: #A3E635; }
+    .sev-seg.lit3 { background: #FCD34D; }
+
+    .sev-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+      position: relative; z-index:1;
+    }
+    .sev-labels span {
+      font-size: 9px;
+      color: rgba(255,255,255,0.3);
+      font-weight: 500;
+    }
+
+    .sev-summary {
+      font-size: 12.5px;
+      color: rgba(255,255,255,0.65);
+      line-height: 1.65;
+      margin-top: 12px;
+      position: relative; z-index: 1;
+    }
+
+    .stat-pills {
+      display: flex;
+      gap: 7px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+      position: relative; z-index: 1;
+    }
+
+    .stat-pill {
+      background: rgba(255,255,255,0.1);
+      border-radius: 100px;
+      padding: 6px 12px;
+      font-size: 11.5px;
+      color: rgba(255,255,255,0.8);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ── SECTION HEADER ── */
+    .section-hdr {
+      padding: 4px 20px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase;
+    }
+
+    /* ── FACE MAP ── */
+    .face-map-card {
+      margin: 0 20px 14px;
+      background: #111120;
+      border-radius: 20px;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .face-map-inner {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .face-map-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      flex-shrink: 0;
+      padding-left: 4px;
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .leg-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .leg-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      display: block;
+    }
+
+    .leg-count {
+      font-size: 10px;
+      color: rgba(255,255,255,0.3);
+      display: block;
+    }
+
+    /* ── ZONE SCROLL ── */
+    .zone-scroll {
+      overflow-x: auto;
+      padding: 0 20px 4px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .zone-scroll::-webkit-scrollbar { display: none; }
+    .zone-scroll { scrollbar-width: none; }
+
+    .zone-card {
+      background: #111120;
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.07);
+      min-width: 122px;
+      flex-shrink: 0;
+    }
+
+    .zone-emoji { font-size: 13px; margin-bottom: 6px; display: block; }
+
+    .zone-name {
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.38);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+
+    .zone-count {
+      font-size: 28px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -1.5px;
+      line-height: 1;
+      margin-bottom: 3px;
+    }
+
+    .zone-type {
+      font-size: 10.5px;
+      font-weight: 600;
+      margin-bottom: 9px;
+    }
+
+    .zone-bar {
+      width: 100%;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.07);
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .zone-bar-fill { height: 100%; border-radius: 2px; }
+
+    .zone-note {
+      font-size: 10px;
+      color: rgba(255,255,255,0.32);
+      line-height: 1.45;
+    }
+
+    /* ── SKIN INSIGHTS ── */
+    .insights-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 20px;
+      margin-bottom: 14px;
+    }
+
+    .insight-card {
+      background: #111120;
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .insight-icon-wrap {
+      width: 34px; height: 34px;
+      border-radius: 11px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      margin-bottom: 10px;
+    }
+
+    .insight-lbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.32);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .insight-val {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .insight-note {
+      font-size: 10.5px;
+      color: rgba(255,255,255,0.38);
+      line-height: 1.45;
+    }
+
+    /* ── ACNE BREAKDOWN ── */
+    .acne-card {
+      margin: 0 20px 14px;
+      background: #111120;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.07);
+      overflow: hidden;
+    }
+
+    .acne-row {
+      display: flex;
+      align-items: center;
+      padding: 13px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .acne-row:last-child { border-bottom: none; }
+
+    .acne-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    .acne-info { flex: 1; }
+
+    .acne-type-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 2px;
+    }
+
+    .acne-type-desc {
+      font-size: 11px;
+      color: rgba(255,255,255,0.33);
+    }
+
+    .acne-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    .acne-count {
+      font-size: 22px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+
+    .acne-src {
+      font-size: 9px;
+      color: rgba(255,255,255,0.28);
+      font-weight: 500;
+    }
+
+    /* ── RECOMMENDATIONS ── */
+    .recs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 20px;
+      margin-bottom: 20px;
+    }
+
+    .rec-card {
+      background: #111120;
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .rec-icon {
+      width: 36px; height: 36px;
+      border-radius: 12px;
+      background: rgba(124,92,252,0.1);
+      border: 1px solid rgba(124,92,252,0.18);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .rec-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 3px;
+    }
+
+    .rec-desc {
+      font-size: 11px;
+      color: rgba(255,255,255,0.38);
+      line-height: 1.5;
+    }
+
+    /* ── CTA ── */
+    .cta-wrap { padding: 0 20px; margin-bottom: 20px; }
+
+    .cta-btn {
+      width: 100%;
+      height: 54px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #7C5CFC, #5B21B6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: white;
+      letter-spacing: -0.2px;
+      box-shadow: 0 8px 24px rgba(124,92,252,0.4);
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      gap: 8px;
+    }
+
+    /* ── BOTTOM NAV ── */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 82px;
+      background: rgba(8,8,15,0.96);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      backdrop-filter: blur(20px);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 16px 16px;
+      z-index: 10;
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: rgba(255,255,255,0.28);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+    }
+
+    .nav-item.active { color: #7C5CFC; }
+
+    .nav-icon {
+      width: 24px; height: 24px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .fab {
+      width: 52px; height: 52px;
+      border-radius: 26px;
+      background: linear-gradient(135deg, #7C5CFC, #5B21B6);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(124,92,252,0.5);
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .scroll-hint {
+      font-size: 10px;
+      color: rgba(255,255,255,0.2);
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      text-align: center;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<div class="phone-wrap">
+  <div class="preview-label">Glow · Skin Analysis · UI Preview</div>
+
+  <div class="phone">
+    <div class="dynamic-island"></div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <span class="time">9:41</span>
+      <div class="status-icons">
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+          <rect x="0" y="8" width="3" height="4" rx="0.5" fill="white" opacity="0.35"/>
+          <rect x="4.5" y="5.5" width="3" height="6.5" rx="0.5" fill="white" opacity="0.55"/>
+          <rect x="9" y="3" width="3" height="9" rx="0.5" fill="white" opacity="0.75"/>
+          <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
+        </svg>
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+          <circle cx="8" cy="10.5" r="1.2" fill="white"/>
+          <path d="M5.2 8.2C5.9 7.2 6.9 6.8 8 6.8s2.1.4 2.8 1.4" stroke="white" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+          <path d="M2 5.2C3.7 3 5.7 2 8 2s4.3 1 6 3.2" stroke="white" stroke-width="1.3" stroke-linecap="round" fill="none" opacity="0.55"/>
+        </svg>
+        <svg width="26" height="13" viewBox="0 0 26 13" fill="none">
+          <rect x="0.5" y="0.5" width="22" height="12" rx="3.5" stroke="white" stroke-opacity="0.35"/>
+          <rect x="2" y="2" width="18" height="9" rx="2" fill="white"/>
+          <path d="M24 4.5v4a2 2 0 000-4z" fill="white" opacity="0.35"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Screen Content -->
+    <div class="screen">
+
+      <!-- Header -->
+      <div class="header">
+        <div class="icon-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 3L5 8l5 5" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="header-center">
+          <div class="header-title">Scan Results</div>
+          <div class="header-date">April 8, 2026</div>
+        </div>
+        <div class="icon-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="11.5" cy="2.5" r="1.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.3"/>
+            <circle cx="4.5" cy="8" r="1.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.3"/>
+            <circle cx="11.5" cy="13.5" r="1.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.3"/>
+            <path d="M6 7l4-3.5M6 9l4 3.5" stroke="rgba(255,255,255,0.6)" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Photo view tabs -->
+      <div class="photo-tabs">
+        <button class="photo-tab" onclick="switchTab(this, 'left')">◀ Left</button>
+        <button class="photo-tab active" onclick="switchTab(this, 'front')">Front</button>
+        <button class="photo-tab" onclick="switchTab(this, 'right')">Right ▶</button>
+      </div>
+
+      <!-- Photo card with annotated face -->
+      <div class="photo-card">
+        <svg width="100%" height="100%" viewBox="0 0 350 230" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="skinGrad" cx="50%" cy="42%" r="52%">
+              <stop offset="0%" stop-color="#D4A574"/>
+              <stop offset="55%" stop-color="#B8845A"/>
+              <stop offset="100%" stop-color="#8C5E3C"/>
+            </radialGradient>
+            <radialGradient id="bgGlow" cx="50%" cy="48%" r="60%">
+              <stop offset="0%" stop-color="#1C1040"/>
+              <stop offset="100%" stop-color="#07050F"/>
+            </radialGradient>
+            <filter id="soft">
+              <feGaussianBlur stdDeviation="1.2" result="blur"/>
+              <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+            </filter>
+          </defs>
+
+          <!-- BG -->
+          <rect width="350" height="230" fill="url(#bgGlow)"/>
+          <ellipse cx="175" cy="115" rx="100" ry="110" fill="rgba(180,120,80,0.06)"/>
+
+          <!-- Hair -->
+          <ellipse cx="175" cy="48" rx="67" ry="32" fill="#1A0E08"/>
+          <rect x="109" y="46" width="132" height="45" fill="#1A0E08"/>
+          <ellipse cx="175" cy="91" rx="67" ry="8" fill="#1A0E08" opacity="0.4"/>
+
+          <!-- Left ear -->
+          <ellipse cx="109" cy="122" rx="9" ry="13" fill="#B8845A"/>
+          <ellipse cx="110" cy="122" rx="5" ry="8" fill="#9E6E46" opacity="0.5"/>
+          <!-- Right ear -->
+          <ellipse cx="241" cy="122" rx="9" ry="13" fill="#B8845A"/>
+          <ellipse cx="240" cy="122" rx="5" ry="8" fill="#9E6E46" opacity="0.5"/>
+
+          <!-- Face oval -->
+          <ellipse cx="175" cy="123" rx="64" ry="80" fill="url(#skinGrad)"/>
+
+          <!-- Subtle shading on face sides -->
+          <ellipse cx="133" cy="123" rx="24" ry="55" fill="rgba(80,40,10,0.15)"/>
+          <ellipse cx="217" cy="123" rx="24" ry="55" fill="rgba(80,40,10,0.15)"/>
+
+          <!-- Neck -->
+          <rect x="158" y="197" width="34" height="35" rx="8" fill="#B8845A"/>
+          <rect x="158" y="197" width="34" height="10" fill="#A07040" opacity="0.4"/>
+
+          <!-- Eyebrows -->
+          <path d="M140 98 Q153 93 167 97" stroke="#3D1F08" stroke-width="3" stroke-linecap="round" fill="none"/>
+          <path d="M183 97 Q197 93 210 98" stroke="#3D1F08" stroke-width="3" stroke-linecap="round" fill="none"/>
+
+          <!-- Left eye -->
+          <ellipse cx="154" cy="109" rx="13" ry="8" fill="#5C3D20"/>
+          <ellipse cx="154" cy="109" rx="10" ry="6.5" fill="#F5EFDF"/>
+          <circle cx="155" cy="109" r="5" fill="#2A1205"/>
+          <circle cx="155" cy="109" r="2.5" fill="#1A0A02"/>
+          <circle cx="157" cy="107" r="1.8" fill="rgba(255,255,255,0.75)"/>
+          <!-- Eyelashes -->
+          <path d="M142 107 Q154 101 166 107" stroke="#1A0A02" stroke-width="1.8" fill="none"/>
+
+          <!-- Right eye -->
+          <ellipse cx="196" cy="109" rx="13" ry="8" fill="#5C3D20"/>
+          <ellipse cx="196" cy="109" rx="10" ry="6.5" fill="#F5EFDF"/>
+          <circle cx="197" cy="109" r="5" fill="#2A1205"/>
+          <circle cx="197" cy="109" r="2.5" fill="#1A0A02"/>
+          <circle cx="199" cy="107" r="1.8" fill="rgba(255,255,255,0.75)"/>
+          <path d="M184 107 Q196 101 208 107" stroke="#1A0A02" stroke-width="1.8" fill="none"/>
+
+          <!-- Nose bridge + tip -->
+          <path d="M170 128 Q174 144 175 145 Q176 144 180 128" stroke="#8C5030" stroke-width="1.3" fill="none" opacity="0.6"/>
+          <!-- Nostrils -->
+          <ellipse cx="170" cy="145" rx="5" ry="3" fill="#7A4020" opacity="0.7"/>
+          <ellipse cx="180" cy="145" rx="5" ry="3" fill="#7A4020" opacity="0.7"/>
+
+          <!-- Mouth -->
+          <path d="M162 165 Q175 174 188 165" stroke="#904030" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M164 165 Q175 170 186 165" fill="#C06050" opacity="0.6"/>
+
+          <!-- ══════════════════════════════════ -->
+          <!-- BOUNDING BOXES                    -->
+          <!-- ══════════════════════════════════ -->
+
+          <!-- Box 1: Forehead – Papules (model, solid red) -->
+          <rect x="147" y="62" width="56" height="28" rx="5"
+                fill="rgba(248,113,113,0.07)" stroke="#F87171" stroke-width="1.8"/>
+          <rect x="147" y="50" width="56" height="15" rx="4" fill="#F87171"/>
+          <text x="152" y="61" font-family="DM Sans,sans-serif" font-size="8.5" font-weight="700" fill="white">Papule · 94%</text>
+
+          <!-- Box 2: Nose – Blackheads (model, solid gray) -->
+          <rect x="163" y="133" width="24" height="18" rx="4"
+                fill="rgba(148,163,184,0.07)" stroke="#94A3B8" stroke-width="1.8"/>
+          <rect x="157" y="121" width="56" height="15" rx="4" fill="#475569"/>
+          <text x="162" y="132" font-family="DM Sans,sans-serif" font-size="8.5" font-weight="700" fill="white">Blackhead · 89%</text>
+
+          <!-- Box 3: Left cheek – Pustule cluster (model, solid yellow) -->
+          <rect x="117" y="113" width="36" height="40" rx="5"
+                fill="rgba(252,211,77,0.07)" stroke="#FCD34D" stroke-width="1.8"/>
+          <rect x="117" y="101" width="48" height="15" rx="4" fill="#CA9B00"/>
+          <text x="122" y="112" font-family="DM Sans,sans-serif" font-size="8.5" font-weight="700" fill="white">Pustule · 91%</text>
+
+          <!-- Box 4: Right cheek – Papule (model, solid red) -->
+          <rect x="197" y="110" width="34" height="35" rx="5"
+                fill="rgba(248,113,113,0.07)" stroke="#F87171" stroke-width="1.8"/>
+          <rect x="197" y="98" width="44" height="15" rx="4" fill="#F87171"/>
+          <text x="202" y="109" font-family="DM Sans,sans-serif" font-size="8.5" font-weight="700" fill="white">Papule · 88%</text>
+
+          <!-- Box 5: Chin – Papule cluster (model, solid red) -->
+          <rect x="153" y="169" width="44" height="24" rx="5"
+                fill="rgba(248,113,113,0.07)" stroke="#F87171" stroke-width="1.8"/>
+          <rect x="153" y="157" width="58" height="15" rx="4" fill="#F87171"/>
+          <text x="158" y="168" font-family="DM Sans,sans-serif" font-size="8.5" font-weight="700" fill="white">Papule x3 · 96%</text>
+
+          <!-- Box 6: Forehead right – AI identified (dashed purple) -->
+          <rect x="192" y="72" width="28" height="22" rx="4"
+                fill="rgba(167,139,250,0.06)" stroke="#A78BFA" stroke-width="1.5"
+                stroke-dasharray="4 2"/>
+        </svg>
+
+        <!-- Legend -->
+        <div class="photo-legend">
+          <div class="photo-legend-item">
+            <div class="leg-solid" style="background:#7C5CFC;"></div>
+            <span>Model detected</span>
+          </div>
+          <div class="photo-legend-item">
+            <div class="leg-dashed" style="border-color:#A78BFA;"></div>
+            <span>AI identified</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Severity Card ── -->
+      <div class="section-pad">
+        <div class="severity-card">
+          <div class="sev-top">
+            <div>
+              <div class="sev-title">Moderate Acne</div>
+              <div class="sev-sub">28 spots across 3 views</div>
+            </div>
+            <div class="sev-badge">Moderate</div>
+          </div>
+
+          <div class="sev-bar">
+            <div class="sev-seg lit1"></div>
+            <div class="sev-seg lit2"></div>
+            <div class="sev-seg lit3"></div>
+            <div class="sev-seg"></div>
+            <div class="sev-seg"></div>
+          </div>
+          <div class="sev-labels">
+            <span>Clear</span>
+            <span>Mild</span>
+            <span>Moderate</span>
+            <span>Severe</span>
+            <span>Extreme</span>
+          </div>
+
+          <div class="sev-summary">
+            Primarily inflammatory acne concentrated along your lower face and chin — often a hormonal pattern. Your T-zone shows excess oil, while your cheeks appear slightly dehydrated. AI identified 6 additional possible spots.
+          </div>
+
+          <div class="stat-pills">
+            <div class="stat-pill">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4.5" stroke="#34D399" stroke-width="1.2"/>
+                <path d="M3 5.5l2 2 3-3.5" stroke="#34D399" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              22 confirmed
+            </div>
+            <div class="stat-pill">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4.5" stroke="#A78BFA" stroke-width="1.2" stroke-dasharray="2.5 1.5"/>
+                <path d="M3 5.5l2 2 3-3.5" stroke="#A78BFA" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              6 possible
+            </div>
+            <div class="stat-pill">🎯 Chin &amp; jawline</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Face Map ── -->
+      <div class="section-hdr">Acne Map</div>
+      <div class="face-map-card">
+        <div class="face-map-inner">
+          <!-- SVG Face Map -->
+          <div style="flex:1; display:flex; justify-content:center;">
+            <svg width="138" height="183" viewBox="0 0 138 183" xmlns="http://www.w3.org/2000/svg">
+              <!-- Head outline -->
+              <ellipse cx="69" cy="102" rx="52" ry="70" fill="#18162E" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+
+              <!-- Hair -->
+              <path d="M19 78 Q17 44 69 30 Q121 44 119 78 Q108 46 69 42 Q30 46 19 78Z" fill="#0D0C1A"/>
+
+              <!-- Subtle zone tints -->
+              <ellipse cx="69" cy="66" rx="40" ry="20" fill="rgba(124,92,252,0.07)"/>
+              <ellipse cx="69" cy="153" rx="26" ry="14" fill="rgba(248,113,113,0.1)"/>
+              <ellipse cx="30" cy="110" rx="20" ry="26" fill="rgba(252,211,77,0.06)"/>
+              <ellipse cx="108" cy="110" rx="20" ry="26" fill="rgba(248,113,113,0.06)"/>
+
+              <!-- Ears -->
+              <ellipse cx="17" cy="100" rx="7" ry="10" fill="#18162E" stroke="rgba(255,255,255,0.1)" stroke-width="0.8"/>
+              <ellipse cx="121" cy="100" rx="7" ry="10" fill="#18162E" stroke="rgba(255,255,255,0.1)" stroke-width="0.8"/>
+
+              <!-- Eyebrows -->
+              <path d="M39 83 Q51 79 63 83" stroke="rgba(255,255,255,0.18)" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+              <path d="M75 83 Q87 79 99 83" stroke="rgba(255,255,255,0.18)" stroke-width="1.6" stroke-linecap="round" fill="none"/>
+
+              <!-- Eyes -->
+              <ellipse cx="51" cy="92" rx="12" ry="7.5" fill="#110F22"/>
+              <ellipse cx="87" cy="92" rx="12" ry="7.5" fill="#110F22"/>
+              <ellipse cx="51" cy="92" rx="12" ry="7.5" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="0.8"/>
+              <ellipse cx="87" cy="92" rx="12" ry="7.5" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="0.8"/>
+              <circle cx="51" cy="92" r="3.5" fill="rgba(255,255,255,0.04)"/>
+              <circle cx="87" cy="92" r="3.5" fill="rgba(255,255,255,0.04)"/>
+
+              <!-- Nose -->
+              <path d="M65 117 Q69 129 73 117" stroke="rgba(255,255,255,0.12)" stroke-width="1.1" fill="none"/>
+              <ellipse cx="63" cy="126" rx="4.5" ry="3" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" stroke-width="0.7"/>
+              <ellipse cx="75" cy="126" rx="4.5" ry="3" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" stroke-width="0.7"/>
+
+              <!-- Mouth -->
+              <path d="M59 144 Q69 152 79 144" stroke="rgba(255,255,255,0.15)" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+
+              <!-- ══ ACNE DOTS ══ -->
+
+              <!-- Forehead: papules (red) + blackheads (gray) -->
+              <circle cx="49" cy="62" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="62" cy="55" r="3.8" fill="#94A3B8" opacity="0.88"/>
+              <circle cx="76" cy="59" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="88" cy="65" r="3.5" fill="#DDD6FE" opacity="0.85"/>
+
+              <!-- T-zone / nose: blackheads -->
+              <circle cx="65" cy="117" r="3" fill="#94A3B8" opacity="0.85"/>
+              <circle cx="73" cy="120" r="2.8" fill="#94A3B8" opacity="0.8"/>
+              <circle cx="69" cy="111" r="2.8" fill="#94A3B8" opacity="0.75"/>
+
+              <!-- Left cheek: papules + pustules -->
+              <circle cx="29" cy="98" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="24" cy="111" r="4.2" fill="#FCD34D" opacity="0.92"/>
+              <circle cx="31" cy="123" r="3.8" fill="#F87171" opacity="0.88"/>
+              <circle cx="25" cy="135" r="3.8" fill="#F87171" opacity="0.85"/>
+              <circle cx="33" cy="104" r="3.3" fill="#FCD34D" opacity="0.82"/>
+              <!-- AI dot left cheek -->
+              <circle cx="21" cy="119" r="3.8" fill="rgba(167,139,250,0.18)" stroke="#A78BFA" stroke-width="1.3" stroke-dasharray="2.5 1.5"/>
+
+              <!-- Right cheek: papules -->
+              <circle cx="109" cy="96" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="114" cy="110" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="107" cy="122" r="3.8" fill="#FCD34D" opacity="0.88"/>
+              <circle cx="112" cy="134" r="3.8" fill="#F87171" opacity="0.85"/>
+              <!-- AI dot right cheek -->
+              <circle cx="117" cy="101" r="3.8" fill="rgba(167,139,250,0.18)" stroke="#A78BFA" stroke-width="1.3" stroke-dasharray="2.5 1.5"/>
+
+              <!-- Chin: papules + pustules (hormonal) -->
+              <circle cx="61" cy="155" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="69" cy="161" r="4.5" fill="#FCD34D" opacity="0.92"/>
+              <circle cx="77" cy="156" r="4.2" fill="#F87171" opacity="0.92"/>
+              <circle cx="64" cy="165" r="3.8" fill="#F87171" opacity="0.85"/>
+              <circle cx="74" cy="166" r="3.5" fill="#DDD6FE" opacity="0.82"/>
+              <!-- AI dots chin -->
+              <circle cx="55" cy="160" r="3.8" fill="rgba(167,139,250,0.18)" stroke="#A78BFA" stroke-width="1.3" stroke-dasharray="2.5 1.5"/>
+              <circle cx="83" cy="161" r="3.5" fill="rgba(167,139,250,0.18)" stroke="#A78BFA" stroke-width="1.3" stroke-dasharray="2.5 1.5"/>
+
+              <!-- Jawline -->
+              <circle cx="37" cy="146" r="3.8" fill="#F87171" opacity="0.88"/>
+              <circle cx="101" cy="145" r="3.8" fill="#F87171" opacity="0.88"/>
+              <!-- AI dot jawline -->
+              <circle cx="42" cy="155" r="3.3" fill="rgba(167,139,250,0.18)" stroke="#A78BFA" stroke-width="1.3" stroke-dasharray="2.5 1.5"/>
+            </svg>
+          </div>
+
+          <!-- Legend -->
+          <div class="face-map-legend">
+            <div class="leg-item">
+              <div class="leg-dot" style="background:#F87171;"></div>
+              <div>
+                <span class="leg-name">Papule</span>
+                <span class="leg-count">12 spots</span>
+              </div>
+            </div>
+            <div class="leg-item">
+              <div class="leg-dot" style="background:#FCD34D;"></div>
+              <div>
+                <span class="leg-name">Pustule</span>
+                <span class="leg-count">5 spots</span>
+              </div>
+            </div>
+            <div class="leg-item">
+              <div class="leg-dot" style="background:#94A3B8;"></div>
+              <div>
+                <span class="leg-name">Blackhead</span>
+                <span class="leg-count">6 spots</span>
+              </div>
+            </div>
+            <div class="leg-item">
+              <div class="leg-dot" style="background:#DDD6FE;"></div>
+              <div>
+                <span class="leg-name">Whitehead</span>
+                <span class="leg-count">5 spots</span>
+              </div>
+            </div>
+            <div class="leg-item" style="margin-top:3px;">
+              <div class="leg-dot" style="background:rgba(167,139,250,0.18); border: 1.5px dashed #A78BFA; box-sizing:border-box;"></div>
+              <div>
+                <span class="leg-name" style="color:#A78BFA;">AI flagged</span>
+                <span class="leg-count">6 possible</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Zone Breakdown ── -->
+      <div class="section-hdr">Zone Breakdown</div>
+      <div class="zone-scroll">
+        <div class="zone-card" style="border-color:rgba(248,113,113,0.22);">
+          <span class="zone-emoji">🔴</span>
+          <div class="zone-name">Chin</div>
+          <div class="zone-count">7</div>
+          <div class="zone-type" style="color:#F87171;">Papules · Pustules</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:90%;background:#F87171;"></div></div>
+          <div class="zone-note">Hormonal pattern — often linked to cycle or stress levels.</div>
+        </div>
+        <div class="zone-card">
+          <span class="zone-emoji">◀</span>
+          <div class="zone-name">Left Cheek</div>
+          <div class="zone-count">6</div>
+          <div class="zone-type" style="color:#FCD34D;">Mixed types</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:75%;background:#FCD34D;"></div></div>
+          <div class="zone-note">May relate to phone contact or pillowcase buildup.</div>
+        </div>
+        <div class="zone-card">
+          <span class="zone-emoji">▶</span>
+          <div class="zone-name">Right Cheek</div>
+          <div class="zone-count">5</div>
+          <div class="zone-type" style="color:#F87171;">Papules</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:62%;background:#F87171;"></div></div>
+          <div class="zone-note">Slightly less affected than left cheek.</div>
+        </div>
+        <div class="zone-card">
+          <span class="zone-emoji">⬆</span>
+          <div class="zone-name">Forehead</div>
+          <div class="zone-count">4</div>
+          <div class="zone-type" style="color:#94A3B8;">Papules · Blackheads</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:48%;background:#94A3B8;"></div></div>
+          <div class="zone-note">Linked to haircare products or fringe irritation.</div>
+        </div>
+        <div class="zone-card">
+          <span class="zone-emoji">✦</span>
+          <div class="zone-name">T-Zone</div>
+          <div class="zone-count">3</div>
+          <div class="zone-type" style="color:#94A3B8;">Blackheads</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:36%;background:#94A3B8;"></div></div>
+          <div class="zone-note">Oily pores. Gentle BHA exfoliation recommended.</div>
+        </div>
+        <div class="zone-card">
+          <span class="zone-emoji">⬇</span>
+          <div class="zone-name">Jawline</div>
+          <div class="zone-count">3</div>
+          <div class="zone-type" style="color:#F87171;">Papules</div>
+          <div class="zone-bar"><div class="zone-bar-fill" style="width:36%;background:#F87171;"></div></div>
+          <div class="zone-note">Hormonal indicator. Monitor over next cycle.</div>
+        </div>
+      </div>
+
+      <!-- ── Skin Insights ── -->
+      <div class="section-hdr">Skin Insights</div>
+      <div class="insights-grid">
+        <div class="insight-card">
+          <div class="insight-icon-wrap" style="background:rgba(45,212,191,0.1);">🧬</div>
+          <div class="insight-lbl">Skin Type</div>
+          <div class="insight-val" style="color:#2DD4BF;">Combination</div>
+          <div class="insight-note">Oily T-zone with drier cheeks and temples.</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon-wrap" style="background:rgba(96,165,250,0.1);">💧</div>
+          <div class="insight-lbl">Moisture</div>
+          <div class="insight-val" style="color:#60A5FA;">Low–Normal</div>
+          <div class="insight-note">Some surface dehydration visible on cheeks.</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon-wrap" style="background:rgba(167,139,250,0.1);">👁</div>
+          <div class="insight-lbl">Eye Bags</div>
+          <div class="insight-val" style="color:#A78BFA;">Mild</div>
+          <div class="insight-note">Slight puffiness — may indicate sleep or hydration.</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-icon-wrap" style="background:rgba(252,211,77,0.1);">✦</div>
+          <div class="insight-lbl">Texture</div>
+          <div class="insight-val" style="color:#FCD34D;">Uneven</div>
+          <div class="insight-note">Rough patches near chin from active inflammation.</div>
+        </div>
+      </div>
+
+      <!-- ── Acne Breakdown ── -->
+      <div class="section-hdr">Acne Breakdown</div>
+      <div class="acne-card">
+        <div class="acne-row">
+          <div class="acne-dot" style="background:#F87171;"></div>
+          <div class="acne-info">
+            <div class="acne-type-name">Papules</div>
+            <div class="acne-type-desc">Red, inflamed bumps · no visible pus</div>
+          </div>
+          <div class="acne-right">
+            <div class="acne-count">12</div>
+            <div class="acne-src">Model confirmed</div>
+          </div>
+        </div>
+        <div class="acne-row">
+          <div class="acne-dot" style="background:#94A3B8;"></div>
+          <div class="acne-info">
+            <div class="acne-type-name">Blackheads</div>
+            <div class="acne-type-desc">Open comedones · oxidized pores</div>
+          </div>
+          <div class="acne-right">
+            <div class="acne-count">6</div>
+            <div class="acne-src">Model confirmed</div>
+          </div>
+        </div>
+        <div class="acne-row">
+          <div class="acne-dot" style="background:#DDD6FE;"></div>
+          <div class="acne-info">
+            <div class="acne-type-name">Whiteheads</div>
+            <div class="acne-type-desc">Closed comedones · trapped oil</div>
+          </div>
+          <div class="acne-right">
+            <div class="acne-count">5</div>
+            <div class="acne-src">Model + AI</div>
+          </div>
+        </div>
+        <div class="acne-row">
+          <div class="acne-dot" style="background:#FCD34D;"></div>
+          <div class="acne-info">
+            <div class="acne-type-name">Pustules</div>
+            <div class="acne-type-desc">White/yellow pus-filled lesions</div>
+          </div>
+          <div class="acne-right">
+            <div class="acne-count">5</div>
+            <div class="acne-src">Model confirmed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Recommendations ── -->
+      <div class="section-hdr">Recommendations</div>
+      <div class="recs-list">
+        <div class="rec-card">
+          <div class="rec-icon">🧴</div>
+          <div>
+            <div class="rec-title">Add a Niacinamide Serum</div>
+            <div class="rec-desc">Targets papules and regulates sebum on your oily T-zone. Look for 5–10% concentration.</div>
+          </div>
+        </div>
+        <div class="rec-card">
+          <div class="rec-icon">🌙</div>
+          <div>
+            <div class="rec-title">BHA Exfoliant at Night</div>
+            <div class="rec-desc">Salicylic acid clears blackheads and prevents new comedones. 2–3× per week to start.</div>
+          </div>
+        </div>
+        <div class="rec-card">
+          <div class="rec-icon">💦</div>
+          <div>
+            <div class="rec-title">Hydrate Your Cheeks</div>
+            <div class="rec-desc">Despite oiliness, your cheeks are dehydrated. Layer a lightweight hyaluronic acid moisturizer.</div>
+          </div>
+        </div>
+        <div class="rec-card" style="border-color:rgba(248,113,113,0.2);">
+          <div class="rec-icon" style="background:rgba(248,113,113,0.1);border-color:rgba(248,113,113,0.18);">⚠️</div>
+          <div>
+            <div class="rec-title">Consider a Dermatologist</div>
+            <div class="rec-desc">The chin + jawline pattern may benefit from prescription treatment for hormonal acne.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CTA -->
+      <div class="cta-wrap">
+        <button class="cta-btn">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M7.5 1v13M1 7.5h13" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          Build My Skin Plan
+        </button>
+      </div>
+
+    </div><!-- /screen -->
+
+    <!-- Bottom Nav -->
+    <div class="bottom-nav">
+      <div class="nav-item">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <path d="M3 9.5L11 3l8 6.5V19a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        Home
+      </div>
+      <div class="nav-item active">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="9" r="5" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M3 19.5c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </div>
+        Scan
+      </div>
+      <div class="nav-item" style="margin-bottom:8px;">
+        <div class="fab">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 4v12M4 10h12" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="12" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="3" y="12" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="12" y="12" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+        </div>
+        Plan
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <path d="M3 6h16M3 11h10M3 16h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </div>
+        Progress
+      </div>
+    </div>
+
+  </div><!-- /phone -->
+  <div class="scroll-hint">↑ scroll inside the phone to see the full screen ↑</div>
+</div>
+
+<script>
+  function switchTab(el, view) {
+    document.querySelectorAll('.photo-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  }
+</script>
+</body>
+</html>

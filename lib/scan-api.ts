@@ -95,60 +95,60 @@ export async function createScanSession(
 }
 
 /**
- * Resize the front image to GEMINI_MAX_DIM on its longest side.
+ * Resize an image to GEMINI_MAX_DIM on its longest side.
  * Returns raw base64 (no data-URI prefix).
  */
-async function resizeFrontForGemini(image: CapturedImage): Promise<string> {
+async function resizeImageForClaude(image: CapturedImage, label: string): Promise<string> {
   const longest = Math.max(image.width, image.height);
 
-  // Already small enough — use as-is
   if (longest <= GEMINI_MAX_DIM) {
-    console.log('[scan-api] front image already small enough, skipping resize');
-    return image.base64;
+    console.log(`[scan-api] ${label} image already small enough, skipping resize`);
+    return image.base64.replace(/^data:image\/\w+;base64,/, '');
   }
 
   const scale = GEMINI_MAX_DIM / longest;
   const targetWidth = Math.round(image.width * scale);
   const targetHeight = Math.round(image.height * scale);
 
-  console.log(
-    `[scan-api] resizing front image ${image.width}x${image.height} → ${targetWidth}x${targetHeight} for Gemini`
-  );
+  console.log(`[scan-api] resizing ${label} image ${image.width}x${image.height} → ${targetWidth}x${targetHeight} for Claude`);
 
   const result = await ImageManipulator.manipulateAsync(
     image.uri,
     [{ resize: { width: targetWidth, height: targetHeight } }],
-    {
-      compress: GEMINI_IMAGE_QUALITY,
-      format: ImageManipulator.SaveFormat.JPEG,
-      base64: true,
-    }
+    { compress: GEMINI_IMAGE_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true }
   );
 
-  if (!result.base64) throw new Error('Image resize returned no base64');
+  if (!result.base64) throw new Error(`Image resize returned no base64 for ${label}`);
 
+  const raw = result.base64.replace(/^data:image\/\w+;base64,/, '');
   const originalKB = Math.round((image.base64.length * 3) / 4 / 1024);
-  const resizedKB = Math.round((result.base64.length * 3) / 4 / 1024);
-  console.log(`[scan-api] resize complete: ${originalKB}KB → ${resizedKB}KB`);
+  const resizedKB = Math.round((raw.length * 3) / 4 / 1024);
+  console.log(`[scan-api] ${label} resize complete: ${originalKB}KB → ${resizedKB}KB`);
 
-  return result.base64;
+  return raw;
 }
 
 /**
  * Call the gemini-review-scan edge function.
- * Sends only the resized front image + all 3 Ultralytics detection results.
+ * Sends all 3 resized images + Ultralytics detection results.
  */
 export async function callGeminiReview(
   userId: string,
   images: Record<ViewAngle, CapturedImage>,
   detections: Record<ViewAngle, DetectionResult>
 ): Promise<ScanResponse> {
-  // Resize front image — only image sent to Gemini
-  const frontImageResized = await resizeFrontForGemini(images.front);
+  // Resize all 3 images in parallel
+  const [frontImageResized, leftImageResized, rightImageResized] = await Promise.all([
+    resizeImageForClaude(images.front, 'front'),
+    resizeImageForClaude(images.left, 'left'),
+    resizeImageForClaude(images.right, 'right'),
+  ]);
 
   const payload: ScanRequest = {
     user_id: userId,
     front_image: frontImageResized,
+    left_image: leftImageResized,
+    right_image: rightImageResized,
     detections: {
       front: detections.front.detections,
       left: detections.left.detections,
@@ -163,6 +163,14 @@ export async function callGeminiReview(
 
   const payloadKB = Math.round(JSON.stringify(payload).length / 1024);
   console.log(`[scan-api] calling gemini-review-scan, payload size: ${payloadKB}KB`);
+
+  // Ensure the session token is fresh before calling the edge function.
+  // An expired JWT causes a 401 "invalid JWT" at the Supabase gateway.
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData?.session) {
+    await supabase.auth.refreshSession();
+    console.log('[scan-api] session refreshed before edge function call');
+  }
 
   const { data, error } = await supabase.functions.invoke('gemini-review-scan', {
     body: payload,
