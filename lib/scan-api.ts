@@ -96,25 +96,35 @@ export async function createScanSession(
 
 /**
  * Resize an image to GEMINI_MAX_DIM on its longest side.
+ * logicalWidth/Height must be the EXIF-corrected dimensions (from YOLO's imageWidth/imageHeight)
+ * to match the coordinate space of the bboxes.
  * Returns raw base64 (no data-URI prefix).
  */
-async function resizeImageForClaude(image: CapturedImage, label: string): Promise<string> {
-  const longest = Math.max(image.width, image.height);
+async function resizeImageForClaude(
+  image: CapturedImage,
+  label: string,
+  logicalWidth: number,
+  logicalHeight: number
+): Promise<string> {
+  const longest = Math.max(logicalWidth, logicalHeight);
 
   if (longest <= GEMINI_MAX_DIM) {
     console.log(`[scan-api] ${label} image already small enough, skipping resize`);
     return image.base64.replace(/^data:image\/\w+;base64,/, '');
   }
 
-  const scale = GEMINI_MAX_DIM / longest;
-  const targetWidth = Math.round(image.width * scale);
-  const targetHeight = Math.round(image.height * scale);
+  // Resize only the longest side; ImageManipulator preserves aspect ratio
+  const isPortrait = logicalHeight >= logicalWidth;
+  const resize = isPortrait ? { height: GEMINI_MAX_DIM } : { width: GEMINI_MAX_DIM };
 
-  console.log(`[scan-api] resizing ${label} image ${image.width}x${image.height} → ${targetWidth}x${targetHeight} for Claude`);
+  const targetW = isPortrait ? Math.round(logicalWidth * GEMINI_MAX_DIM / logicalHeight) : GEMINI_MAX_DIM;
+  const targetH = isPortrait ? GEMINI_MAX_DIM : Math.round(logicalHeight * GEMINI_MAX_DIM / logicalWidth);
+
+  console.log(`[scan-api] resizing ${label} image ${logicalWidth}x${logicalHeight} → ${targetW}x${targetH} for Claude`);
 
   const result = await ImageManipulator.manipulateAsync(
     image.uri,
-    [{ resize: { width: targetWidth, height: targetHeight } }],
+    [{ resize }],
     { compress: GEMINI_IMAGE_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true }
   );
 
@@ -137,11 +147,13 @@ export async function callGeminiReview(
   images: Record<ViewAngle, CapturedImage>,
   detections: Record<ViewAngle, DetectionResult>
 ): Promise<ScanResponse> {
-  // Resize all 3 images in parallel
+  // Resize all 3 images in parallel.
+  // Use YOLO's imageWidth/imageHeight (UIImage logical dimensions, EXIF-corrected)
+  // so the resize scale matches the bbox coordinate space.
   const [frontImageResized, leftImageResized, rightImageResized] = await Promise.all([
-    resizeImageForClaude(images.front, 'front'),
-    resizeImageForClaude(images.left, 'left'),
-    resizeImageForClaude(images.right, 'right'),
+    resizeImageForClaude(images.front, 'front', detections.front.imageWidth, detections.front.imageHeight),
+    resizeImageForClaude(images.left, 'left', detections.left.imageWidth, detections.left.imageHeight),
+    resizeImageForClaude(images.right, 'right', detections.right.imageWidth, detections.right.imageHeight),
   ]);
 
   const payload: ScanRequest = {
@@ -154,10 +166,12 @@ export async function callGeminiReview(
       left: detections.left.detections,
       right: detections.right.detections,
     },
+    // Use YOLO logical dimensions so the edge function can correctly scale
+    // AI-added bbox coordinates back from resized image space to original space.
     image_dimensions: {
-      front: { width: images.front.width, height: images.front.height },
-      left: { width: images.left.width, height: images.left.height },
-      right: { width: images.right.width, height: images.right.height },
+      front: { width: detections.front.imageWidth, height: detections.front.imageHeight },
+      left: { width: detections.left.imageWidth, height: detections.left.imageHeight },
+      right: { width: detections.right.imageWidth, height: detections.right.imageHeight },
     },
   };
 

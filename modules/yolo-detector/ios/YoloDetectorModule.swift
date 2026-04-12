@@ -159,21 +159,23 @@ public class YoloDetectorModule: Module {
         baseIdx = i * valuesPerDetection
       }
 
-      let x1 = ptr[baseIdx + 0]
-      let y1 = ptr[baseIdx + 1]
-      let x2 = ptr[baseIdx + 2]
-      let y2 = ptr[baseIdx + 3]
+      // YOLO output format: [x_center, y_center, width, height, confidence, class_id]
+      // All coordinates are in model-input pixel space (0..1280).
+      let cx         = ptr[baseIdx + 0]
+      let cy         = ptr[baseIdx + 1]
+      let bw         = ptr[baseIdx + 2]
+      let bh         = ptr[baseIdx + 3]
       let confidence = ptr[baseIdx + 4]
-      let classIdx = Int(ptr[baseIdx + 5])
+      let classIdx   = Int(ptr[baseIdx + 5])
 
       // Skip low confidence or padding detections (end2end pads with zeros)
       guard confidence >= confidenceThreshold, classIdx >= 0, classIdx < classNames.count else { continue }
 
-      // Scale from model input space (1280x1280) to original image dimensions
-      let scaledX1 = Double(x1 * scaleX)
-      let scaledY1 = Double(y1 * scaleY)
-      let scaledX2 = Double(x2 * scaleX)
-      let scaledY2 = Double(y2 * scaleY)
+      // Convert center format → corner format, then scale to original image dimensions
+      let scaledX1 = Double((cx - bw / 2) * scaleX)
+      let scaledY1 = Double((cy - bh / 2) * scaleY)
+      let scaledX2 = Double((cx + bw / 2) * scaleX)
+      let scaledY2 = Double((cy + bh / 2) * scaleY)
 
       detections.append([
         "x1": scaledX1,

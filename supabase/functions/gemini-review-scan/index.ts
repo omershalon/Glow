@@ -189,6 +189,64 @@ function detectMeaningfulChange(
   return { changed: reasons.length > 0, reasons };
 }
 
+/**
+ * Fix bbox coordinate spaces in Gemini's reviewed_detections:
+ *
+ * - Model detections (source="model"): Gemini copies bbox values from the text context
+ *   which are already in original YOLO pixel space. But in case Gemini drifts, we restore
+ *   them from the original YOLO detections using a greedy class-queue match.
+ *
+ * - AI-added detections (source="ai"): Gemini estimated these from the resized image
+ *   (~800px max), so their bbox coords are in resized space. Scale them up to original space.
+ */
+function fixBboxCoordinates(
+  reviewedDetections: { front: any[]; left: any[]; right: any[] },
+  original: AllDetections,
+  imageDimensions: { front?: { width: number; height: number }; left?: { width: number; height: number }; right?: { width: number; height: number } } | null
+): void {
+  const angles = ['front', 'left', 'right'] as const;
+
+  for (const angle of angles) {
+    const reviewed: any[] = reviewedDetections[angle] ?? [];
+    const originalDets: Detection[] = original[angle] ?? [];
+    const dims = imageDimensions?.[angle];
+
+    // Compute uniform scale factor: resized → original (aspect ratio preserved, so scaleX == scaleY)
+    let bboxScale = 1;
+    if (dims) {
+      const longest = Math.max(dims.width, dims.height);
+      if (longest > CONFIG.image_resize_for_gemini) {
+        bboxScale = longest / CONFIG.image_resize_for_gemini;
+      }
+    }
+
+    // Build per-class FIFO queues of original YOLO detections
+    const origQueues: Record<string, Detection[]> = {};
+    for (const det of originalDets) {
+      if (!origQueues[det.className]) origQueues[det.className] = [];
+      origQueues[det.className].push(det);
+    }
+    const origPtrs: Record<string, number> = {};
+
+    for (const det of reviewed) {
+      if (det.source === 'model') {
+        // Restore original YOLO bbox to guarantee correct coordinate space
+        const cls = det.className as string;
+        const queue = origQueues[cls] ?? [];
+        const ptr = origPtrs[cls] ?? 0;
+        if (ptr < queue.length) {
+          det.bbox = queue[ptr].bbox;
+          det.confidence = queue[ptr].confidence;
+          origPtrs[cls] = ptr + 1;
+        }
+      } else if (det.source === 'ai' && Array.isArray(det.bbox) && bboxScale > 1) {
+        // Scale up from resized Gemini image space to original YOLO pixel space
+        det.bbox = (det.bbox as number[]).map((v) => Math.round(v * bboxScale));
+      }
+    }
+  }
+}
+
 /** Build reviewed_detections for a cached response (all model detections confirmed) */
 function buildCachedReviewedDetections(current: AllDetections) {
   function confirmAll(dets: Detection[]) {
@@ -711,6 +769,14 @@ CRITICAL constraints:
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    // ── Fix bbox coordinate spaces ──
+    // Model detections: restore original YOLO bboxes (Gemini may drift from the values
+    //   it was given, or future prompt changes might omit them).
+    // AI-added detections: scale up from the resized Gemini image space to original space.
+    if (result.reviewed_detections) {
+      fixBboxCoordinates(result.reviewed_detections, current, image_dimensions);
     }
 
     // ── Normalize severity to valid enum values ──

@@ -24,16 +24,15 @@ android {
   }
 
   aaptOptions {
-    noCompress "tflite"
+    noCompress "onnx"
   }
 }
 
 dependencies {
   implementation project(':expo-modules-core')
   implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${safeExtGet('kotlinVersion', '1.9.24')}"
-  implementation "org.tensorflow:tensorflow-lite:2.14.0"
-  implementation "org.tensorflow:tensorflow-lite-gpu:2.14.0"
-  implementation "org.tensorflow:tensorflow-lite-support:0.4.4"
+  // ONNX Runtime — handles end2end YOLO output [1, 300, 6] natively
+  implementation "com.microsoft.onnxruntime:onnxruntime-android:1.19.2"
 }
 
 def safeExtGet(prop, fallback) {

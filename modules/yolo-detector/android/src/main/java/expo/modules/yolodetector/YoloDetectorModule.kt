@@ -1,28 +1,30 @@
 package expo.modules.yolodetector
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.File
 import java.io.FileInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import kotlin.math.max
-import kotlin.math.min
+import java.nio.FloatBuffer
+import java.util.Collections
 
 class YoloDetectorModule : Module() {
-    private var interpreter: Interpreter? = null
-    private val classNames = arrayOf("blackheads", "dark spot", "nodules", "papules", "pustules", "whiteheads")
+
+    private var ortEnv: OrtEnvironment? = null
+    private var ortSession: OrtSession? = null
+
+    private val classNames = arrayOf(
+        "blackheads", "dark spot", "nodules", "papules", "pustules", "whiteheads"
+    )
     private val inputSize = 1280
-    private val numClasses = 6
-    private val iouThreshold = 0.45f
 
     override fun definition() = ModuleDefinition {
         Name("YoloDetector")
@@ -38,193 +40,154 @@ class YoloDetectorModule : Module() {
         }
     }
 
-    private fun getInterpreter(): Interpreter {
-        interpreter?.let { return it }
+    // ── Session initialisation ───────────────────────────────────────────────
 
-        val context = appContext.reactContext ?: throw Exception("React context not available")
-        val modelBuffer = loadModelFile(context)
+    private fun getSession(): OrtSession {
+        ortSession?.let { return it }
 
-        val options = Interpreter.Options().apply {
-            setNumThreads(4)
-            try {
-                addDelegate(GpuDelegate())
-            } catch (e: Exception) {
-                // GPU not available, fall back to CPU
-            }
+        val context = appContext.reactContext
+            ?: throw Exception("React context not available")
+
+        val env = OrtEnvironment.getEnvironment()
+        ortEnv = env
+
+        // Load model bytes from assets (merged from the AAR)
+        val bytes = context.assets.open("yolo-acne.onnx").readBytes()
+        val opts = OrtSession.SessionOptions().apply {
+            setIntraOpNumThreads(4)
+            addNnapi()   // Android Neural Networks API (GPU/DSP acceleration)
         }
-
-        val interp = Interpreter(modelBuffer, options)
-        interpreter = interp
-        return interp
+        val session = env.createSession(bytes, opts)
+        ortSession = session
+        return session
     }
 
-    private fun loadModelFile(context: android.content.Context): MappedByteBuffer {
-        val assetFd = context.assets.openFd("yolo-acne.tflite")
-        val inputStream = FileInputStream(assetFd.fileDescriptor)
-        val fileChannel = inputStream.channel
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, assetFd.startOffset, assetFd.declaredLength)
-    }
+    // ── Main detection ───────────────────────────────────────────────────────
 
     private fun runDetection(imageUri: String, confidenceThreshold: Float, promise: Promise) {
         val startTime = System.currentTimeMillis()
 
-        // Load image
-        val bitmap = loadBitmap(imageUri)
-            ?: return promise.reject("ERR_IMAGE", "Could not load image from URI: $imageUri")
+        val bitmap = loadBitmapWithOrientation(imageUri)
+            ?: return promise.reject("ERR_IMAGE", "Could not load image: $imageUri")
 
-        val imageWidth = bitmap.width
+        val imageWidth  = bitmap.width
         val imageHeight = bitmap.height
 
-        // Resize to input size
+        // ── Pre-process ──────────────────────────────────────────────────────
         val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-
-        // Preprocess: convert to float32 RGB normalized [0, 1]
-        val inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputSize * inputSize * 4).apply {
-            order(ByteOrder.nativeOrder())
-        }
-
-        val pixels = IntArray(inputSize * inputSize)
+        val pixels  = IntArray(inputSize * inputSize)
         resized.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
 
-        // YOLO expects CHW format: [1, 3, 1280, 1280]
-        val rChannel = FloatArray(inputSize * inputSize)
-        val gChannel = FloatArray(inputSize * inputSize)
-        val bChannel = FloatArray(inputSize * inputSize)
-
+        // NCHW float32 [1, 3, 1280, 1280], normalised [0, 1]
+        val floatBuf = FloatBuffer.allocate(1 * 3 * inputSize * inputSize)
         for (i in pixels.indices) {
-            val pixel = pixels[i]
-            rChannel[i] = ((pixel shr 16) and 0xFF) / 255.0f
-            gChannel[i] = ((pixel shr 8) and 0xFF) / 255.0f
-            bChannel[i] = (pixel and 0xFF) / 255.0f
+            floatBuf.put(((pixels[i] shr 16) and 0xFF) / 255f)  // R
         }
+        for (i in pixels.indices) {
+            floatBuf.put(((pixels[i] shr 8)  and 0xFF) / 255f)  // G
+        }
+        for (i in pixels.indices) {
+            floatBuf.put(( pixels[i]          and 0xFF) / 255f)  // B
+        }
+        floatBuf.rewind()
 
-        for (v in rChannel) inputBuffer.putFloat(v)
-        for (v in gChannel) inputBuffer.putFloat(v)
-        for (v in bChannel) inputBuffer.putFloat(v)
+        // ── Inference ────────────────────────────────────────────────────────
+        val session = getSession()
+        val env     = ortEnv!!
+        val inputName = session.inputNames.iterator().next()
 
-        inputBuffer.rewind()
+        OnnxTensor.createTensor(
+            env, floatBuf,
+            longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
+        ).use { inputTensor ->
 
-        // Run inference
-        val interp = getInterpreter()
+            val results = session.run(Collections.singletonMap(inputName, inputTensor))
+            results.use {
+                val outputTensor = results[0].value
 
-        // YOLO output shape: [1, numClasses + 4, numDetections]
-        val outputShape = interp.getOutputTensor(0).shape()
-        val numAttrs = outputShape[1]  // 4 + numClasses = 10
-        val numDetections = outputShape[2]
+                // Model output: [1, 300, 6] — [x1, y1, x2, y2, confidence, classIndex]
+                // Coordinates are in model-input space (0..1280), scaled to image size.
+                @Suppress("UNCHECKED_CAST")
+                val raw = outputTensor as Array<Array<FloatArray>>
+                val detections = buildDetections(
+                    raw[0], imageWidth, imageHeight, confidenceThreshold
+                )
 
-        val outputBuffer = Array(1) { Array(numAttrs) { FloatArray(numDetections) } }
-        interp.run(inputBuffer, outputBuffer)
-
-        val inferenceTime = System.currentTimeMillis() - startTime
-
-        // Post-process: decode detections
-        val rawDetections = mutableListOf<FloatArray>() // [x1, y1, x2, y2, classIndex, confidence]
-        val output = outputBuffer[0]
-
-        for (i in 0 until numDetections) {
-            val cx = output[0][i]
-            val cy = output[1][i]
-            val w = output[2][i]
-            val h = output[3][i]
-
-            // Find best class
-            var maxScore = 0f
-            var maxIdx = 0
-            for (c in 0 until numClasses) {
-                val score = output[4 + c][i]
-                if (score > maxScore) {
-                    maxScore = score
-                    maxIdx = c
-                }
+                val inferenceTime = System.currentTimeMillis() - startTime
+                promise.resolve(mapOf(
+                    "detections"      to detections,
+                    "imageWidth"      to imageWidth,
+                    "imageHeight"     to imageHeight,
+                    "inferenceTimeMs" to inferenceTime
+                ))
             }
-
-            if (maxScore < confidenceThreshold) continue
-
-            // Convert from center format to corner format, scaled to original image
-            val scaleX = imageWidth.toFloat() / inputSize
-            val scaleY = imageHeight.toFloat() / inputSize
-            val x1 = (cx - w / 2) * scaleX
-            val y1 = (cy - h / 2) * scaleY
-            val x2 = (cx + w / 2) * scaleX
-            val y2 = (cy + h / 2) * scaleY
-
-            rawDetections.add(floatArrayOf(x1, y1, x2, y2, maxIdx.toFloat(), maxScore))
         }
-
-        // NMS
-        val nmsResults = nms(rawDetections, iouThreshold)
-
-        // Build output
-        val detections = nmsResults.map { det ->
-            val classIdx = det[4].toInt()
-            mapOf(
-                "x1" to det[0].toDouble(),
-                "y1" to det[1].toDouble(),
-                "x2" to det[2].toDouble(),
-                "y2" to det[3].toDouble(),
-                "classIndex" to classIdx,
-                "className" to (classNames.getOrNull(classIdx) ?: "unknown"),
-                "confidence" to det[5].toDouble()
-            )
-        }
-
-        promise.resolve(mapOf(
-            "detections" to detections,
-            "imageWidth" to imageWidth,
-            "imageHeight" to imageHeight,
-            "inferenceTimeMs" to inferenceTime
-        ))
     }
 
-    private fun nms(detections: List<FloatArray>, iouThreshold: Float): List<FloatArray> {
-        if (detections.isEmpty()) return emptyList()
+    // ── Post-processing ──────────────────────────────────────────────────────
 
-        // Group by class
-        val byClass = detections.groupBy { it[4].toInt() }
-        val result = mutableListOf<FloatArray>()
+    private fun buildDetections(
+        output: Array<FloatArray>,
+        imageWidth: Int,
+        imageHeight: Int,
+        threshold: Float
+    ): List<Map<String, Any>> {
+        val scaleX = imageWidth.toFloat()  / inputSize
+        val scaleY = imageHeight.toFloat() / inputSize
+        val result = mutableListOf<Map<String, Any>>()
 
-        for ((_, dets) in byClass) {
-            val sorted = dets.sortedByDescending { it[5] }.toMutableList()
-            val keep = mutableListOf<FloatArray>()
+        for (det in output) {
+            // YOLO output format: [x_center, y_center, width, height, confidence, class_id]
+            // All coordinates are in model-input pixel space (0..1280).
+            val cx       = det[0]
+            val cy       = det[1]
+            val bw       = det[2]
+            val bh       = det[3]
+            val conf     = det[4]
+            val classIdx = det[5].toInt()
+            if (conf < threshold || classIdx < 0 || classIdx >= classNames.size) continue
 
-            while (sorted.isNotEmpty()) {
-                val best = sorted.removeAt(0)
-                keep.add(best)
-                sorted.removeAll { iou(best, it) > iouThreshold }
-            }
-            result.addAll(keep)
+            // Convert center format → corner format, then scale to original image dimensions
+            result.add(mapOf(
+                "x1"         to ((cx - bw / 2) * scaleX).toDouble(),
+                "y1"         to ((cy - bh / 2) * scaleY).toDouble(),
+                "x2"         to ((cx + bw / 2) * scaleX).toDouble(),
+                "y2"         to ((cy + bh / 2) * scaleY).toDouble(),
+                "classIndex" to classIdx,
+                "className"  to classNames[classIdx],
+                "confidence" to conf.toDouble()
+            ))
         }
-
         return result
     }
 
-    private fun iou(a: FloatArray, b: FloatArray): Float {
-        val x1 = max(a[0], b[0])
-        val y1 = max(a[1], b[1])
-        val x2 = min(a[2], b[2])
-        val y2 = min(a[3], b[3])
+    // ── Image loading ────────────────────────────────────────────────────────
 
-        val intersection = max(0f, x2 - x1) * max(0f, y2 - y1)
-        val areaA = (a[2] - a[0]) * (a[3] - a[1])
-        val areaB = (b[2] - b[0]) * (b[3] - b[1])
-        val union = areaA + areaB - intersection
-
-        return if (union > 0) intersection / union else 0f
-    }
-
-    private fun loadBitmap(uri: String): Bitmap? {
+    private fun loadBitmapWithOrientation(uri: String): Bitmap? {
         return try {
             val path = if (uri.startsWith("file://")) uri.substring(7) else uri
             val file = File(path)
-            if (file.exists()) {
+            val bitmap = if (file.exists()) {
                 BitmapFactory.decodeFile(file.absolutePath)
             } else {
-                val context = appContext.reactContext ?: return null
-                val stream = context.contentResolver.openInputStream(Uri.parse(uri))
-                BitmapFactory.decodeStream(stream)
+                val ctx = appContext.reactContext ?: return null
+                BitmapFactory.decodeStream(ctx.contentResolver.openInputStream(Uri.parse(uri)))
+            } ?: return null
+
+            val exif = try { ExifInterface(path) } catch (_: Exception) { return bitmap }
+            val degrees = when (
+                exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            ) {
+                ExifInterface.ORIENTATION_ROTATE_90  ->  90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
             }
-        } catch (e: Exception) {
-            null
-        }
+            if (degrees == 0f) bitmap
+            else Bitmap.createBitmap(
+                bitmap, 0, 0, bitmap.width, bitmap.height,
+                Matrix().apply { postRotate(degrees) }, true
+            )
+        } catch (_: Exception) { null }
     }
 }
